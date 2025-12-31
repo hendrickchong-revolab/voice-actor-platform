@@ -4,6 +4,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { revalidatePath } from "next/cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ExportProjectButton } from "@/components/ExportProjectButton";
@@ -120,6 +121,10 @@ export default async function ManagerProjectPage({
                   skipDuplicates: true,
                 }),
               ]);
+
+              revalidatePath(`/manager/projects/${projectId}`);
+              revalidatePath("/agent/tasks");
+              redirect(`/manager/projects/${projectId}`);
             }}
           >
             {agents.length === 0 ? (

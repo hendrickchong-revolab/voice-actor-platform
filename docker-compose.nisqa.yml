@@ -1,0 +1,18 @@
+services:
+  pyworker:
+    # NISQA is much easier to run reliably on linux/amd64.
+    platform: linux/amd64
+    image: va-platform-pyworker-nisqa
+    build:
+      context: .
+      dockerfile: pyworker/Dockerfile.nisqa
+    command: ["python", "-m", "pyworker.run"]
+    # If you cloned NISQA locally and want to use that instead of the image clone,
+    # uncomment the mount below and set NISQA_MODEL_PATH accordingly.
+    # volumes:
+    #   - ./vendor/NISQA:/opt/NISQA:ro
+    environment:
+      # If the model weights aren't present in /opt/NISQA/weights, point these at your mounted path.
+      NISQA_REPO_DIR: ${NISQA_REPO_DIR:-/opt/NISQA}
+      NISQA_MODEL_PATH: ${NISQA_MODEL_PATH:-/opt/NISQA/weights/nisqa.tar}
+      NISQA_PREDICT_CMD: ${NISQA_PREDICT_CMD:-python /app/pyworker/nisqa_predict_stdout.py --wav {wav} --repo /opt/NISQA --model /opt/NISQA/weights/nisqa.tar}

@@ -15,7 +15,7 @@ type Props = {
 
 async function decodeAudio(blob: Blob) {
   const arrayBuffer = await blob.arrayBuffer();
-  const audioCtx = new AudioContext();
+  const audioCtx = new AudioContext({ sampleRate: 48000 });
   const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
   const channel = audioBuffer.getChannelData(0);
 
@@ -33,6 +33,63 @@ async function decodeAudio(blob: Blob) {
 
   audioCtx.close();
   return { peak, rms, durationSec };
+}
+
+function encodeWavMono16(audioBuffer: AudioBuffer) {
+  const numChannels = audioBuffer.numberOfChannels;
+  const length = audioBuffer.length;
+  const sampleRate = audioBuffer.sampleRate;
+
+  // Mix down to mono.
+  const mono = new Float32Array(length);
+  for (let ch = 0; ch < numChannels; ch++) {
+    const data = audioBuffer.getChannelData(ch);
+    for (let i = 0; i < length; i++) mono[i] += data[i] / numChannels;
+  }
+
+  // 16-bit PCM
+  const bytesPerSample = 2;
+  const blockAlign = 1 * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = mono.length * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  const writeStr = (offset: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true); // PCM header size
+  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(22, 1, true); // channels
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true); // bits/sample
+  writeStr(36, "data");
+  view.setUint32(40, dataSize, true);
+
+  let off = 44;
+  for (let i = 0; i < mono.length; i++) {
+    const s = Math.max(-1, Math.min(1, mono[i]));
+    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    off += 2;
+  }
+
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
+async function toWav(blob: Blob) {
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioCtx = new AudioContext({ sampleRate: 48000 });
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+  const wav = encodeWavMono16(audioBuffer);
+  audioCtx.close();
+  return wav;
 }
 
 async function sha256Hex(blob: Blob) {
@@ -123,14 +180,23 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
 
     rec.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop());
-      const out = new Blob(chunksRef.current, { type: rec.mimeType || mimeType || "audio/webm" });
-      setBlob(out);
-      setStatus("ready");
+      const raw = new Blob(chunksRef.current, { type: rec.mimeType || mimeType || "audio/webm" });
       try {
-        const m = await decodeAudio(out);
+        const wav = await toWav(raw);
+        setBlob(wav);
+        const m = await decodeAudio(wav);
         setMetrics(m);
+        setStatus("ready");
       } catch {
-        setError("Could not analyze audio. Try again.");
+        // Fallback to raw if conversion/decoding fails in a given browser.
+        setBlob(raw);
+        setStatus("ready");
+        try {
+          const m = await decodeAudio(raw);
+          setMetrics(m);
+        } catch {
+          setError("Could not analyze audio. Try again.");
+        }
       }
     };
 
@@ -147,8 +213,8 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
     setStatus("uploading");
     setError(null);
 
-    const contentType = blob.type || mimeType || "audio/webm";
-    const extension = contentType.includes("ogg") ? "ogg" : "webm";
+    const contentType = blob.type || "audio/wav";
+    const extension = contentType.includes("wav") ? "wav" : contentType.includes("ogg") ? "ogg" : "webm";
 
     let audioSha256: string;
     try {

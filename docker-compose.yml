@@ -10,6 +10,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U va -d va_platform"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
 
   redis:
     image: redis:7
@@ -42,13 +47,43 @@ services:
       DATABASE_URL: postgresql://va:va@postgres:5432/va_platform?schema=public
       PYWORKER_HOST: 0.0.0.0
       PYWORKER_PORT: 8000
-    command: bash -lc "pip install -U pip && pip install fastapi uvicorn[standard] psycopg[binary] && python -m pyworker.run"
+      # Pass through S3/MinIO settings so the worker can download audio.
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minio}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minio123456}
+      # NISQA command template (must be provided by you; see README notes in pyworker/nisqa_runner.py)
+      # Example: NISQA_PREDICT_CMD: "nisqa_predict --input {wav} --output -"
+      NISQA_PREDICT_CMD: ${NISQA_PREDICT_CMD:-}
+      NISQA_MIN_SCORE: ${NISQA_MIN_SCORE:-3.5}
+    command: bash -lc "apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/* && pip install -U pip && pip install fastapi uvicorn[standard] psycopg[binary] boto3 && python -m pyworker.run"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "8000:8000"
+
+  migrate:
+    image: node:20-slim
+    working_dir: /app/web
+    volumes:
+      - ./:/app
+      - web_node_modules:/app/web/node_modules
+    environment:
+      DATABASE_URL: postgresql://va:va@postgres:5432/va_platform?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      bash -lc
+      "apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+      && npm install --no-audit --no-fund --no-package-lock
+      && npx prisma generate
+      && npx prisma migrate deploy
+      && node prisma/seed.js"
 
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  web_node_modules:

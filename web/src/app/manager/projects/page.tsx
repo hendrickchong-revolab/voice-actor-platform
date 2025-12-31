@@ -41,7 +41,10 @@ export default async function ManagerProjectsPage() {
           >
             <div className="grid gap-3 md:grid-cols-2">
               <Input name="title" placeholder="Title" required />
-              <Input name="language" placeholder="Language (optional)" />
+              <div className="space-y-1">
+                <Input name="language" placeholder="Language (optional)" />
+                <div className="text-xs text-muted-foreground">Leave blank if unknown.</div>
+              </div>
             </div>
             <Textarea name="description" placeholder="Description" />
 

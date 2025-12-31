@@ -9,7 +9,14 @@ import { requireRole, requireSession } from "@/lib/session";
 const createProjectSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
-  language: z.string().trim().min(1).optional(),
+  language: z.preprocess(
+    (v) => {
+      if (typeof v !== "string") return v;
+      const t = v.trim();
+      return t.length === 0 ? undefined : t;
+    },
+    z.string().min(1).optional(),
+  ),
 });
 
 export async function createProject(input: unknown) {

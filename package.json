@@ -4,6 +4,7 @@
   "scripts": {
     "check": "npm --prefix web run check",
     "dev": "bash scripts/dev.sh",
+    "dev:nisqa": "USE_NISQA=1 bash scripts/dev.sh",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down"
   }

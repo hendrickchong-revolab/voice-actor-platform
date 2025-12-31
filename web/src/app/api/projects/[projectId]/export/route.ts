@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "next-auth";
+import type { Prisma } from "@prisma/client";
 
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -12,6 +13,7 @@ export const runtime = "nodejs";
 
 const querySchema = z.object({
   format: z.enum(["csv", "json"]).default("csv"),
+  include: z.enum(["approved", "auto", "approved_or_auto", "all_non_rejected"]).default("approved_or_auto"),
 });
 
 function csvEscape(value: unknown) {
@@ -37,7 +39,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ projectId: stri
 
   const { projectId } = await ctx.params;
   const { searchParams } = new URL(req.url);
-  const { format } = querySchema.parse({ format: searchParams.get("format") ?? undefined });
+  const { format, include } = querySchema.parse({
+    format: searchParams.get("format") ?? undefined,
+    include: searchParams.get("include") ?? undefined,
+  });
 
   if (!config.exportS3.bucket) {
     return new NextResponse("Missing export bucket (set EXPORT_S3_BUCKET or S3_BUCKET)", { status: 500 });
@@ -46,13 +51,25 @@ export async function GET(req: Request, ctx: { params: Promise<{ projectId: stri
   const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, title: true } });
   if (!project) return new NextResponse("Not found", { status: 404 });
 
-  // "At least pass auto scoring" => autoPassed = true.
-  const recs = await db.recording.findMany({
-    where: {
+  // Exportable recordings are usually manager-approved.
+  // If the auto-scoring worker is enabled, it may also set `autoPassed=true`.
+  let where: Prisma.RecordingWhereInput;
+  if (include === "approved") {
+    where = { script: { projectId }, status: "APPROVED" };
+  } else if (include === "auto") {
+    where = { script: { projectId }, autoPassed: true, status: { not: "REJECTED" } };
+  } else if (include === "all_non_rejected") {
+    where = { script: { projectId }, status: { not: "REJECTED" } };
+  } else {
+    where = {
       script: { projectId },
-      autoPassed: true,
       status: { not: "REJECTED" },
-    },
+      OR: [{ status: "APPROVED" }, { autoPassed: true }],
+    };
+  }
+
+  const recs = await db.recording.findMany({
+    where,
     orderBy: { createdAt: "asc" },
     include: {
       user: { select: { id: true, email: true } },
@@ -110,6 +127,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ projectId: stri
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "Content-Disposition": `attachment; filename=project_${projectId}_export.json`,
+        "X-Export-Include": include,
+        "X-Export-Count": String(rows.length),
       },
     });
   }
@@ -148,6 +167,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ projectId: stri
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename=project_${projectId}_export.csv`,
+      "X-Export-Include": include,
+      "X-Export-Count": String(rows.length),
     },
   });
 }

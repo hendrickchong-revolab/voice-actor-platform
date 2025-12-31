@@ -14,6 +14,12 @@ Prereqs:
 npm run dev
 ```
 
+If you want the NISQA-enabled pyworker (recommended when running in a Linux `amd64` environment):
+
+```bash
+npm run dev:nisqa
+```
+
 That script:
 - boots docker services (Postgres/Redis/MinIO/Pyworker)
 - installs `web/` deps
@@ -24,6 +30,13 @@ That script:
 - App: http://localhost:3000
 - MinIO console: http://localhost:9001
 - Pyworker health: http://localhost:8000/health
+
+Optional smoke tests:
+
+```bash
+curl -s http://localhost:8000/health | python -m json.tool
+curl -s http://localhost:8000/nisqa/selftest | python -m json.tool
+```
 
 ## Environment variables
 
@@ -59,6 +72,15 @@ Key variables:
 - `EXPORT_S3_*`: destination S3 for project exports (optional unless you use export)
 - `REDIS_URL`: BullMQ
 - `PYWORKER_URL`: FastAPI analysis service
+
+Recommended local MinIO settings (host-side, used by the Node processes):
+- `S3_ENDPOINT=http://localhost:9000`
+- `S3_REGION=us-east-1`
+- `S3_ACCESS_KEY_ID=minio`
+- `S3_SECRET_ACCESS_KEY=minio123456`
+- `S3_BUCKET=va-platform`
+
+Important: the pyworker must be able to read from the same bucket/key that the web app writes to.
 
 ### Docker env (root `.env`)
 
@@ -107,20 +129,44 @@ Optional:
 The “export” is a **server-side copy**, not continuous replication.
 
 When you click **Export project** (manager/admin UI), the server route:
-- queries recordings for that project where `autoPassed=true` and `status!=REJECTED`
+- queries recordings for that project (by default: approved OR auto-passed, excluding rejected)
 - for each recording:
   - downloads the object from the source S3 (MinIO) using the normal `S3_*` client
   - uploads that same object body to the destination S3 using the `EXPORT_S3_*` client
 - returns a CSV or JSON metadata file as a browser download
 
+You can control the selection with query param `include=`:
+- `approved` (status = APPROVED)
+- `auto` (autoPassed = true and not rejected)
+- `approved_or_auto` (default)
+- `all_non_rejected`
+
 This works for:
-- MinIO 00 AWS S3
-- MinIO 00 another MinIO (set `EXPORT_S3_ENDPOINT` accordingly)
-- AWS S3 00 AWS S3 (omit `EXPORT_S3_ENDPOINT`)
+- MinIO <-> AWS S3
+- MinIO <-> another MinIO (set `EXPORT_S3_ENDPOINT` accordingly)
+- AWS S3 <-> AWS S3 (omit `EXPORT_S3_ENDPOINT`)
 
 Implementation reference:
 - Export route: [web/src/app/api/projects/[projectId]/export/route.ts](web/src/app/api/projects/%5BprojectId%5D/export/route.ts)
 - Export upload helper: [web/src/lib/s3Export.ts](web/src/lib/s3Export.ts)
+
+## NISQA (linux/amd64)
+
+This repo supports running NISQA inside the pyworker container via a compose override.
+
+Use:
+
+```bash
+npm run dev:nisqa
+```
+
+Under the hood this sets `USE_NISQA=1` which makes [scripts/dev.sh](scripts/dev.sh) run docker compose with:
+- [docker-compose.yml](docker-compose.yml)
+- [docker-compose.nisqa.yml](docker-compose.nisqa.yml)
+
+Notes:
+- The NISQA pyworker override sets `platform: linux/amd64`. On Apple Silicon this will run via emulation.
+- The pyworker image includes a small endpoint to validate the NISQA install: `GET /nisqa/selftest`.
 
 ## Recordings log pagination
 

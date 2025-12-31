@@ -46,9 +46,32 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.role = user.role;
       }
+
+      // Important for dev/test environments where the DB is frequently reset:
+      // a previously-issued JWT may still be cryptographically valid even though
+      // the user row no longer exists. Revalidate the user id against the DB.
+      if (token.id) {
+        const existing = await db.user.findUnique({
+          where: { id: String(token.id) },
+          select: { id: true, role: true },
+        });
+
+        if (!existing) {
+          // Returning an empty token will cause session() to return null.
+          return {};
+        }
+
+        // Keep role in sync with DB in case it changed.
+        token.role = existing.role;
+      }
+
       return token;
     },
     async session({ session, token }) {
+      if (!token.id) {
+        // Session callback cannot return null in NextAuth v4; instead, remove user info.
+        return { ...session, user: undefined };
+      }
       if (session.user) {
         if (token.id) session.user.id = token.id;
         if (token.role) session.user.role = token.role;

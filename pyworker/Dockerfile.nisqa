@@ -1,0 +1,51 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# System deps:
+# - ffmpeg: audio conversion
+# - git: optionally clone NISQA repo
+# - libsndfile1: required by soundfile/librosa stack
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg git ca-certificates libsndfile1 \
+  && rm -rf /var/lib/apt/lists/*
+
+# Python deps for pyworker + NISQA.
+# Use CPU-only PyTorch wheels for linux/amd64.
+RUN pip install -U pip \
+  && pip install \
+    fastapi \
+    uvicorn[standard] \
+    psycopg[binary] \
+    boto3 \
+    numpy \
+    scipy \
+    pandas \
+    pyyaml \
+    scikit-learn \
+    tqdm \
+    matplotlib \
+    seaborn \
+    numba \
+    librosa \
+    soundfile \
+  && pip install --index-url https://download.pytorch.org/whl/cpu torch
+
+# App code
+COPY pyworker /app/pyworker
+
+# Optional: clone NISQA repo into the image for convenience.
+# If your build environment has no internet, mount the repo as a volume instead.
+RUN git clone --depth 1 https://github.com/gabrielmittag/NISQA.git /opt/NISQA || true
+
+ENV PYWORKER_HOST=0.0.0.0
+ENV PYWORKER_PORT=8000
+
+# Defaults that work if /opt/NISQA contains code+weights.
+ENV NISQA_REPO_DIR=/opt/NISQA
+ENV NISQA_MODEL_PATH=/opt/NISQA/weights/nisqa.tar
+ENV NISQA_PREDICT_CMD="python /app/pyworker/nisqa_predict_stdout.py --wav {wav} --repo /opt/NISQA --model /opt/NISQA/weights/nisqa.tar"
+
+EXPOSE 8000
+
+CMD ["python", "-m", "pyworker.run"]

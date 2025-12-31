@@ -170,6 +170,13 @@ model Recording {
   werScore    Float?
   transcript  String?
 
+  // --- NISQA Quality Metrics (1-5) ---
+  nisqaNoiPred  Float?
+  nisqaDisPred  Float?
+  nisqaColPred  Float?
+  nisqaLoudPred Float?
+  nisqaModel    String?
+
   // Review Data
   reviewedBy  String?
   reviewNote  String?

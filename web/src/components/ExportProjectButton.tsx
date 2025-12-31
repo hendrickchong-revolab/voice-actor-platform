@@ -32,7 +32,7 @@ export function ExportProjectButton({ projectId }: { projectId: string }) {
         <div className="p-4">
           <div className="text-base font-semibold">Export project</div>
           <div className="mt-1 text-sm text-muted-foreground">
-            Choose a metadata format. Export uploads auto-passed audios to the configured destination S3 bucket.
+            Choose a metadata format. Export uploads approved (and/or auto-passed) audios to the configured destination S3 bucket.
           </div>
 
           <div className="mt-4 space-y-2">

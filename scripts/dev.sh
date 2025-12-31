@@ -3,17 +3,30 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+compose() {
+  local -a args
+  args=()
+  args+=("-f" "docker-compose.yml")
+  if [[ "${USE_NISQA:-}" == "1" ]]; then
+    args+=("-f" "docker-compose.nisqa.yml")
+  fi
+  docker compose "${args[@]}" "$@"
+}
+
 echo "[dev] Starting Docker services (postgres/redis/minio/pyworker)…"
 cd "$ROOT_DIR"
-docker compose up -d
+compose up -d postgres redis minio
+
+echo "[dev] Running DB migrations + seed in a one-off container…"
+compose run --rm migrate
+
+echo "[dev] Starting pyworker…"
+compose up -d pyworker
 
 echo "[dev] Installing web dependencies (if needed)…"
 npm --prefix web install
 
-echo "[dev] Applying DB migrations (deploy) and seeding default admin user…"
-# deploy is non-interactive and uses existing migrations
-npm --prefix web run db:deploy
-npm --prefix web run db:seed
+echo "[dev] DB initialized via docker-compose migrate service."
 
 echo "[dev] Starting Next.js dev server + BullMQ worker…"
 # Run both long-lived processes and clean them up on exit
