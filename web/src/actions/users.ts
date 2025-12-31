@@ -3,10 +3,18 @@
 import { z } from "zod";
 import type { UserRole } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 
 import { db } from "@/lib/db";
 import { requireRole, requireSession } from "@/lib/session";
+
+const usernameSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(32)
+  .regex(/^[a-zA-Z0-9._-]+$/, "Username may contain letters, numbers, dot, underscore, dash only.");
 
 export async function listUsers() {
   const session = await requireSession();
@@ -30,6 +38,7 @@ export async function listUsers() {
       username: true,
       firstName: true,
       lastName: true,
+      languages: true,
       role: true,
       createdAt: true,
     },
@@ -67,6 +76,116 @@ export async function updateUserRole(input: unknown) {
   return updated;
 }
 
+const updateUserDetailsAsAdminSchema = z.object({
+  userId: z.string().min(1),
+  email: z.string().email().transform((s) => s.toLowerCase().trim()),
+  firstName: z.string().trim().min(1),
+  lastName: z.string().trim().min(1),
+  role: z.enum(["AGENT", "MANAGER", "ADMIN"]),
+  languages: z
+    .preprocess(
+      (v) => {
+        if (typeof v !== "string") return [];
+        return v
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      },
+      z.array(z.string().min(1)).default([]),
+    )
+    .optional(),
+  returnTo: z.string().optional(),
+});
+
+export async function updateUserDetailsAsAdmin(formData: FormData) {
+  const session = await requireRole(["ADMIN"]);
+  const parsed = updateUserDetailsAsAdminSchema.parse({
+    userId: formData.get("userId"),
+    email: formData.get("email"),
+    firstName: formData.get("firstName"),
+    lastName: formData.get("lastName"),
+    role: formData.get("role"),
+    languages: formData.get("languages"),
+    returnTo: formData.get("returnTo") ?? undefined,
+  });
+
+  // Safety: prevent self-demotion which could lock out admin controls.
+  if (session.user.id === parsed.userId && parsed.role !== "ADMIN") {
+    throw new Error("CANNOT_CHANGE_OWN_ROLE");
+  }
+
+  await ensureEmailAndUsernameAvailable({ email: parsed.email, excludeUserId: parsed.userId });
+
+  const target = await db.user.findUnique({ where: { id: parsed.userId }, select: { id: true } });
+  if (!target) throw new Error("USER_NOT_FOUND");
+
+  await db.user.update({
+    where: { id: parsed.userId },
+    data: {
+      email: parsed.email,
+      firstName: parsed.firstName,
+      lastName: parsed.lastName,
+      name: fullName(parsed.firstName, parsed.lastName),
+      role: parsed.role as UserRole,
+      languages: parsed.languages ?? [],
+    },
+    select: { id: true },
+  });
+
+  revalidatePath("/manager/users");
+  const returnTo = parsed.returnTo ?? "/manager/users";
+  redirect(`${returnTo}${returnTo.includes("?") ? "&" : "?"}detailsUpdated=1`);
+}
+
+const updateUserCredentialsAsAdminSchema = z
+  .object({
+    userId: z.string().min(1),
+    adminPassword: z.string().min(1),
+    username: usernameSchema,
+    newPassword: z.string().min(6),
+    confirmPassword: z.string().min(6),
+    returnTo: z.string().optional(),
+  })
+  .refine((d) => d.newPassword === d.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords do not match.",
+  });
+
+export async function updateUserCredentialsAsAdmin(formData: FormData) {
+  const session = await requireRole(["ADMIN"]);
+  const parsed = updateUserCredentialsAsAdminSchema.parse({
+    userId: formData.get("userId"),
+    adminPassword: formData.get("adminPassword"),
+    username: formData.get("username"),
+    newPassword: formData.get("newPassword"),
+    confirmPassword: formData.get("confirmPassword"),
+    returnTo: formData.get("returnTo") ?? undefined,
+  });
+
+  const admin = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: { id: true, password: true },
+  });
+  if (!admin) throw new Error("USER_NOT_FOUND");
+  if (!admin.password) throw new Error("NO_PASSWORD_SET");
+
+  const ok = await bcrypt.compare(parsed.adminPassword, admin.password);
+  if (!ok) throw new Error("INVALID_ADMIN_PASSWORD");
+
+  await ensureEmailAndUsernameAvailable({ username: parsed.username, excludeUserId: parsed.userId });
+
+  const hashed = await bcrypt.hash(parsed.newPassword, 12);
+  await db.user.update({
+    where: { id: parsed.userId },
+    data: { username: parsed.username, password: hashed },
+    select: { id: true },
+  });
+
+  revalidatePath("/manager/users");
+  const returnTo = parsed.returnTo ?? "/manager/users";
+  redirect(`${returnTo}${returnTo.includes("?") ? "&" : "?"}credentialsUpdated=1`);
+}
+
 export async function listAgents() {
   await requireRole(["MANAGER", "ADMIN"]);
   return db.user.findMany({
@@ -76,13 +195,6 @@ export async function listAgents() {
   });
 }
 
-const usernameSchema = z
-  .string()
-  .trim()
-  .min(3)
-  .max(32)
-  .regex(/^[a-zA-Z0-9._-]+$/, "Username may contain letters, numbers, dot, underscore, dash only.");
-
 const createUserSchema = z.object({
   email: z.string().email().transform((s) => s.toLowerCase().trim()),
   firstName: z.string().trim().min(1),
@@ -90,7 +202,28 @@ const createUserSchema = z.object({
   username: usernameSchema,
   password: z.string().min(6),
   role: z.enum(["AGENT", "MANAGER", "ADMIN"]).optional(),
+  languages: z
+    .preprocess(
+      (v) => {
+        if (typeof v !== "string") return [];
+        return v
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      },
+      z.array(z.string().min(1)).default([]),
+    )
+    .optional(),
 });
+
+const createUserAsAdminSchema = createUserSchema
+  .extend({
+    confirmPassword: z.string().min(6),
+  })
+  .refine((d) => d.password === d.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords do not match.",
+  });
 
 function fullName(firstName: string, lastName: string) {
   return `${firstName} ${lastName}`.trim();
@@ -118,6 +251,7 @@ async function ensureEmailAndUsernameAvailable({
 // Public registration: always creates AGENT.
 export async function registerUser(input: unknown) {
   const data = createUserSchema.parse(input);
+  if (!data.languages || data.languages.length === 0) throw new Error("LANGUAGE_REQUIRED");
   await ensureEmailAndUsernameAvailable({ email: data.email, username: data.username });
 
   const hashed = await bcrypt.hash(data.password, 12);
@@ -130,6 +264,7 @@ export async function registerUser(input: unknown) {
       name: fullName(data.firstName, data.lastName),
       password: hashed,
       role: "AGENT",
+      languages: data.languages ?? [],
     },
     select: { id: true, email: true },
   });
@@ -140,7 +275,8 @@ export async function registerUser(input: unknown) {
 // Admin-only user creation (role can be set).
 export async function createUserAsAdmin(input: unknown) {
   await requireRole(["ADMIN"]);
-  const data = createUserSchema.parse(input);
+  const data = createUserAsAdminSchema.parse(input);
+  if (!data.languages || data.languages.length === 0) throw new Error("LANGUAGE_REQUIRED");
   await ensureEmailAndUsernameAvailable({ email: data.email, username: data.username });
 
   const hashed = await bcrypt.hash(data.password, 12);
@@ -155,6 +291,7 @@ export async function createUserAsAdmin(input: unknown) {
       name: fullName(data.firstName, data.lastName),
       password: hashed,
       role,
+      languages: data.languages ?? [],
     },
     select: { id: true, email: true, role: true, username: true },
   });

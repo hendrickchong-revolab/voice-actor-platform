@@ -43,6 +43,7 @@ model User {
   emailVerified DateTime?
 
   role          UserRole  @default(AGENT)
+  languages     String[]  @default([])
 
   // Agent Stats
   meritScore    Float     @default(100.0)

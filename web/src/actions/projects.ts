@@ -20,19 +20,26 @@ const createProjectSchema = z.object({
 });
 
 export async function createProject(input: unknown) {
-  await requireRole(["MANAGER", "ADMIN"]);
-  const data = createProjectSchema.parse(input);
+  try {
+    await requireRole(["MANAGER", "ADMIN"]);
+    const data = createProjectSchema.parse(input);
 
-  const created = await db.project.create({
-    data: {
-      title: data.title,
-      description: data.description,
-      language: data.language || null,
-    },
-  });
+    const created = await db.project.create({
+      data: {
+        title: data.title,
+        description: data.description,
+        language: data.language || null,
+      },
+    });
 
-  revalidatePath("/manager/projects");
-  return created;
+    revalidatePath("/manager/projects");
+    return created;
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      throw new Error(`Invalid input: ${error.issues.map((e) => e.message).join(", ")}`);
+    }
+    throw error;
+  }
 }
 
 export async function listActiveProjects() {

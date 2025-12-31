@@ -84,26 +84,37 @@ export async function uploadToExportBucket({
   sourceKey: string;
   destKey: string;
   contentType?: string;
-}) {
+}): Promise<{ bucket: string; key: string } | null> {
   const destBucket = config.exportS3.bucket;
   if (!destBucket) throw new Error("Missing export bucket (set EXPORT_S3_BUCKET or S3_BUCKET)");
 
   const destS3 = exportS3Client();
   await ensureBucketExists(destS3, destBucket);
 
-  const got = await sourceS3.send(new GetObjectCommand({ Bucket: sourceBucket, Key: sourceKey }));
-  const buf = await bodyToBuffer(got.Body);
-  const resolvedContentType = contentType ?? got.ContentType ?? undefined;
+  try {
+    const got = await sourceS3.send(new GetObjectCommand({ Bucket: sourceBucket, Key: sourceKey }));
+    const buf = await bodyToBuffer(got.Body);
+    const resolvedContentType = contentType ?? got.ContentType ?? undefined;
 
-  await destS3.send(
-    new PutObjectCommand({
-      Bucket: destBucket,
-      Key: destKey,
-      Body: buf,
-      ContentLength: buf.length,
-      ContentType: resolvedContentType,
-    }),
-  );
+    await destS3.send(
+      new PutObjectCommand({
+        Bucket: destBucket,
+        Key: destKey,
+        Body: buf,
+        ContentLength: buf.length,
+        ContentType: resolvedContentType,
+      }),
+    );
 
-  return { bucket: destBucket, key: destKey };
+    return { bucket: destBucket, key: destKey };
+  } catch (error: unknown) {
+    // Handle S3 errors gracefully (bucket/file not found, access denied, etc.)
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorCode = (error as { $metadata?: { httpStatusCode?: number }; Code?: string })?.Code || 
+                     (error as { $metadata?: { httpStatusCode?: number }; Code?: string })?.$metadata?.httpStatusCode;
+    
+    // Log the error but don't fail the entire export
+    console.warn(`Failed to copy audio file from s3://${sourceBucket}/${sourceKey}: ${errorMessage} (code: ${errorCode})`);
+    return null;
+  }
 }

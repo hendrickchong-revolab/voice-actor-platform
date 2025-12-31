@@ -20,9 +20,16 @@ export default async function ManagerProjectsPage() {
 
   return (
     <main className="space-y-6">
+      <div className="space-y-2">
+        <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
+        <p className="text-muted-foreground">
+          Create and manage projects, import scripts, and assign agents.
+        </p>
+      </div>
+
       <Card>
         <CardHeader>
-          <CardTitle>Projects</CardTitle>
+          <CardTitle>Create New Project</CardTitle>
         </CardHeader>
         <CardContent>
           <form
@@ -48,7 +55,7 @@ export default async function ManagerProjectsPage() {
             </div>
             <Textarea name="description" placeholder="Description" />
 
-            <Button type="submit">Create</Button>
+            <Button type="submit" className="w-full sm:w-auto">Create Project</Button>
           </form>
         </CardContent>
       </Card>

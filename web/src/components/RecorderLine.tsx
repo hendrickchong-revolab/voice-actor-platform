@@ -169,7 +169,35 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
       return;
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mediaDevices = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+    if (!mediaDevices?.getUserMedia) {
+      // Common when accessing via http://<LAN-IP>; browsers require HTTPS for mic access.
+      const isSecure = typeof window !== "undefined" ? window.isSecureContext : false;
+      if (!isSecure) {
+        setError(
+          "Microphone access requires HTTPS. Localhost works over HTTP, but LAN IPs do not. Use https:// (or access via localhost) to record.",
+        );
+      } else {
+        setError("Microphone access is not available in this browser/environment.");
+      }
+      return;
+    }
+
+    let stream: MediaStream;
+    try {
+      stream = await mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      const name = (e as { name?: string })?.name ?? "";
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        setError("Microphone permission denied. Please allow microphone access and try again.");
+      } else if (name === "NotFoundError") {
+        setError("No microphone device found.");
+      } else {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(`Could not access microphone: ${msg}`);
+      }
+      return;
+    }
     const rec = new MR(stream, mimeType ? { mimeType } : undefined);
     mediaRef.current = rec;
     chunksRef.current = [];

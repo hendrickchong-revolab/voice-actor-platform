@@ -8,14 +8,7 @@ import { revalidatePath } from "next/cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ExportProjectButton } from "@/components/ExportProjectButton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { ProjectAssignmentsPicker } from "@/components/ProjectAssignmentsPicker";
 
 export default async function ManagerProjectPage({
   params,
@@ -31,11 +24,15 @@ export default async function ManagerProjectPage({
 
   const scriptCount = await db.scriptLine.count({ where: { projectId } });
 
-  const agents = await db.user.findMany({
-    where: { role: "AGENT" },
-    select: { id: true, email: true, name: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const agents = (await db.user.findMany(
+    ({
+      where: { role: "AGENT" },
+      // NOTE: `languages` is added via migration `20251231090000_add_user_languages`.
+      // Some TS environments may have stale Prisma client types until `prisma generate` refreshes.
+      select: { id: true, email: true, name: true, languages: true },
+      orderBy: { createdAt: "desc" },
+    } as unknown) as Parameters<typeof db.user.findMany>[0],
+  )) as Array<{ id: string; email: string; name: string | null; languages?: string[] }>;
 
   const assigned: Array<{ userId: string }> = await db.projectAssignment.findMany({
     where: { projectId },
@@ -43,31 +40,47 @@ export default async function ManagerProjectPage({
   });
 
   const assignedSet = new Set(assigned.map((a) => a.userId));
+  const initialAssignedIds = Array.from(assignedSet);
 
   return (
     <main className="space-y-6">
-      <div>
-        <Link className={buttonVariants({ variant: "ghost", size: "sm" })} href="/manager/projects">
-          ← Back
-        </Link>
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <Link 
+            className={buttonVariants({ variant: "ghost", size: "sm" })} 
+            href="/manager/projects"
+          >
+            ← Back to Projects
+          </Link>
+          <h1 className="text-3xl font-bold tracking-tight">{project.title}</h1>
+        </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>{project.title}</CardTitle>
+          <CardTitle>Project Details</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          {project.description ? (
-            <p className="text-sm text-muted-foreground">{project.description}</p>
-          ) : (
-            <p className="text-sm text-muted-foreground">No description.</p>
-          )}
-          {project.language ? (
-            <p className="text-sm text-muted-foreground">Language: {project.language}</p>
-          ) : null}
-          <p className="text-sm text-muted-foreground">Scripts: {scriptCount}</p>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2 sm:grid-cols-2">
+            {project.description ? (
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-1">Description</p>
+                <p className="text-sm">{project.description}</p>
+              </div>
+            ) : null}
+            {project.language ? (
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-1">Language</p>
+                <p className="text-sm">{project.language}</p>
+              </div>
+            ) : null}
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-1">Script Count</p>
+              <p className="text-sm">{scriptCount}</p>
+            </div>
+          </div>
 
-          <div className="pt-2">
+          <div className="pt-2 border-t">
             <ExportProjectButton projectId={projectId} />
           </div>
         </CardContent>
@@ -127,41 +140,15 @@ export default async function ManagerProjectPage({
               redirect(`/manager/projects/${projectId}`);
             }}
           >
-            {agents.length === 0 ? (
-              <p className="text-sm">No agent accounts found.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Assigned</TableHead>
-                    <TableHead>Agent</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {agents.map((a) => (
-                    <TableRow key={a.id}>
-                      <TableCell className="w-28">
-                        <input
-                          id={`agent_${a.id}`}
-                          type="checkbox"
-                          name="agentIds"
-                          value={a.id}
-                          defaultChecked={assignedSet.has(a.id)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <label htmlFor={`agent_${a.id}`} className="cursor-pointer">
-                          {a.name ? `${a.name} — ` : ""}
-                          {a.email}
-                        </label>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+            {agents.length === 0 ? <p className="text-sm">No agent accounts found.</p> : null}
 
-            <Button type="submit">Save assignments</Button>
+            <ProjectAssignmentsPicker
+              agents={agents}
+              initialAssignedIds={initialAssignedIds}
+              projectLanguage={project.language}
+            />
+
+            <Button type="submit" className="w-full sm:w-auto">Save Assignments</Button>
           </form>
         </CardContent>
       </Card>

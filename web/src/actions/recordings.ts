@@ -56,6 +56,7 @@ export async function listPendingForManager() {
   return db.recording.findMany({
     where: { status: { in: ["PENDING", "FLAGGED"] } },
     orderBy: { createdAt: "asc" },
+    take: 200,
     include: {
       user: { select: { email: true, name: true } },
       script: { select: { text: true, context: true, projectId: true } },

@@ -4,6 +4,7 @@ import { getRecordingsLogPage } from "@/actions/recordings";
 import { config } from "@/lib/config";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InlineAudioPlayer } from "@/components/InlineAudioPlayer";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 function statusVariant(status: string): "default" | "secondary" | "outline" | "destructive" {
@@ -37,10 +38,10 @@ export default async function ManagerRecordingsLogPage({
   const nextPage = page < totalPages ? page + 1 : null;
 
   return (
-    <main className="mx-auto w-full max-w-6xl p-6">
+    <main className="space-y-6">
       <div className="mb-4 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Recordings Log</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Recordings Log</h1>
           <p className="text-sm text-muted-foreground">
             Showing {recordings.length} of {total} recordings.
           </p>
@@ -54,7 +55,7 @@ export default async function ManagerRecordingsLogPage({
         <CardHeader>
           <CardTitle>All recordings</CardTitle>
           <CardDescription>
-            Includes audio playback link, script text, agent identity, status, duration and scores.
+            Includes audio playback link, script text, agent identity, status, and MOS score.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -90,18 +91,15 @@ export default async function ManagerRecordingsLogPage({
             </div>
           </div>
 
-          <Table>
+          <Table className="text-xs">
             <TableHeader>
               <TableRow>
-                <TableHead>Status</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Agent</TableHead>
-                <TableHead>Text</TableHead>
-                <TableHead>Audio</TableHead>
-                <TableHead className="text-right">Duration</TableHead>
-                <TableHead className="text-right">WER</TableHead>
-                <TableHead className="text-right">SNR</TableHead>
-                <TableHead className="text-right">MOS</TableHead>
+                <TableHead className="w-[100px]">Status</TableHead>
+                <TableHead className="w-[200px]">Project</TableHead>
+                <TableHead className="w-[220px]">Agent</TableHead>
+                <TableHead className="w-[420px]">Text</TableHead>
+                <TableHead className="w-[280px]">Audio</TableHead>
+                <TableHead className="w-[160px] text-right">MOS</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -110,34 +108,21 @@ export default async function ManagerRecordingsLogPage({
                   <TableCell>
                     <Badge variant={statusVariant(r.status)}>{r.status}</Badge>
                   </TableCell>
-                  <TableCell>{r.script.project.title}</TableCell>
+                  <TableCell className="max-w-[200px] truncate">{r.script.project.title}</TableCell>
                   <TableCell>
-                    <div className="text-sm">{r.user.email}</div>
+                    <div className="text-sm truncate">{r.user.email}</div>
                     {r.user.name ? (
                       <div className="text-xs text-muted-foreground">{r.user.name}</div>
                     ) : null}
                   </TableCell>
-                  <TableCell className="max-w-[520px]">
+                  <TableCell className="w-[420px] max-w-[420px]">
                     <div className="truncate text-sm">{r.script.text}</div>
                     {r.script.context ? (
                       <div className="truncate text-xs text-muted-foreground">{r.script.context}</div>
                     ) : null}
                   </TableCell>
-                  <TableCell>
-                    <audio
-                      controls
-                      preload="none"
-                      src={`/api/uploads/play?recordingId=${encodeURIComponent(r.id)}`}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {r.durationSec != null ? r.durationSec.toFixed(2) : "—"}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {r.werScore != null ? r.werScore.toFixed(3) : "—"}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {r.snrScore != null ? r.snrScore.toFixed(1) : "—"}
+                  <TableCell className="w-[280px]">
+                    <InlineAudioPlayer recordingId={r.id} className="w-[240px]" />
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {r.mosScore != null ? (

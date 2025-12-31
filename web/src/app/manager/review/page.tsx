@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { InlineAudioPlayer } from "@/components/InlineAudioPlayer";
 
 export default async function ManagerReviewPage() {
   const recordings = await listPendingForManager();
@@ -41,7 +42,7 @@ export default async function ManagerReviewPage() {
               </div>
 
               <div className="space-y-1">
-                <audio controls src={`/api/uploads/play?recordingId=${encodeURIComponent(r.id)}`} />
+                <InlineAudioPlayer recordingId={r.id} className="w-full" />
                 <p className="text-xs text-muted-foreground">
                   If audio doesn’t play, refresh (check the network tab for redirects).
                 </p>

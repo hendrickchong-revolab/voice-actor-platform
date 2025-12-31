@@ -1,266 +1,447 @@
-import { createUserAsAdmin, listUsers, updateUserRole } from "@/actions/users";
+import { createUserAsAdmin, listUsers, updateUserDetailsAsAdmin } from "@/actions/users";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/session";
 import { DeleteUserButton } from "@/components/DeleteUserButton";
+import { EditUserCredentialsButton } from "@/components/EditUserCredentialsButton";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-function roleUpdateMessage(code: string) {
+function updateMessage(code: string) {
   if (code === "CANNOT_CHANGE_OWN_ROLE") return "You can’t change your own role.";
   if (code === "USER_NOT_FOUND") return "User not found.";
-  return "Could not update role.";
+  if (code === "EMAIL_IN_USE") return "Email is already registered.";
+  if (code === "USERNAME_IN_USE") return "Username is already taken.";
+  if (code === "INVALID_ADMIN_PASSWORD") return "Admin password is incorrect.";
+  if (code === "NO_PASSWORD_SET") return "Admin account has no password set.";
+  return "Could not update user.";
 }
 
 function userCreateMessage(code: string) {
   if (code === "EMAIL_IN_USE") return "Email is already registered.";
   if (code === "USERNAME_IN_USE") return "Username is already taken.";
+  if (code === "PASSWORD_MISMATCH") return "Passwords do not match.";
+  if (code === "LANGUAGE_REQUIRED") return "Language is required.";
   return "Could not create user.";
+}
+
+function SidePanel({
+  title,
+  description,
+  closeHref,
+  children,
+}: {
+  title: string;
+  description?: string;
+  closeHref: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-50">
+      <Link
+        href={closeHref}
+        aria-label="Close"
+        className="absolute inset-0 bg-background/60 backdrop-blur-sm"
+      />
+      <aside className="va-sidepanel-in absolute right-0 top-0 h-full w-full max-w-xl border-l bg-background">
+        <div className="flex h-full flex-col">
+          <div className="border-b p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">{title}</h2>
+                {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+              </div>
+              <Link className="text-sm underline" href={closeHref}>
+                Close
+              </Link>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6">{children}</div>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function isNextRedirectError(e: unknown) {
+  const anyErr = e as { digest?: unknown };
+  return typeof anyErr?.digest === "string" && anyErr.digest.startsWith("NEXT_REDIRECT");
 }
 
 export default async function ManagerUsersPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ updated?: string; error?: string; created?: string; createError?: string }>;
+  searchParams?: Promise<{
+    edit?: string;
+    add?: string;
+    detailsUpdated?: string;
+    credentialsUpdated?: string;
+    error?: string;
+    created?: string;
+    createError?: string;
+  }>;
 }) {
   const session = await requireSession();
   const sp = (await searchParams) ?? {};
   const users = await listUsers();
   const canEdit = session.user.role === "ADMIN";
+  const editingUser = sp.edit ? users.find((u) => u.id === sp.edit) : null;
+  const returnTo = sp.edit ? `/manager/users?edit=${encodeURIComponent(sp.edit)}` : "/manager/users";
+  const showSuccess = Boolean(sp.detailsUpdated || sp.credentialsUpdated);
 
   return (
-    <main className="mx-auto w-full max-w-5xl p-6">
-      <div className="mb-4 flex items-center justify-between gap-4">
+    <main className="mx-auto w-full max-w-6xl p-6">
+      <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Users</h1>
           <p className="text-sm text-muted-foreground">
-            {canEdit
-              ? "Admins can update roles."
-              : "Managers can view agents and managers."}
+            {canEdit ? "Click a user to edit details." : "Managers can view agents and managers."}
           </p>
         </div>
-        <Link className="text-sm underline" href="/manager">
-          Back to Manager
-        </Link>
+        <div className="flex items-center gap-3">
+          {canEdit ? (
+            <Link href="/manager/users?add=1">
+              <Button type="button" variant="secondary">
+                Add New
+              </Button>
+            </Link>
+          ) : null}
+          <Link className="text-sm underline" href="/manager">
+            Back to Manager
+          </Link>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>All accounts</CardTitle>
-          <CardDescription>
-            {canEdit
-              ? "Admins can change any user role (except their own)."
-              : "Role editing is restricted to Admins."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {sp.updated ? (
-            <p className="mb-3 text-sm text-muted-foreground">Role updated.</p>
-          ) : null}
-          {sp.error ? (
-            <p className="mb-3 text-sm text-destructive">{roleUpdateMessage(sp.error)}</p>
-          ) : null}
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Email</TableHead>
-                <TableHead>Username</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Role</TableHead>
-                {canEdit ? <TableHead>Update</TableHead> : null}
-                {canEdit ? <TableHead>Delete</TableHead> : null}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((u) => (
+      {sp.detailsUpdated ? <p className="mb-3 text-sm text-muted-foreground">User details updated.</p> : null}
+      {sp.credentialsUpdated ? <p className="mb-3 text-sm text-muted-foreground">Login credentials updated.</p> : null}
+      {sp.created ? <p className="mb-3 text-sm text-muted-foreground">User created.</p> : null}
+      {sp.createError ? <p className="mb-3 text-sm text-destructive">{userCreateMessage(sp.createError)}</p> : null}
+      {sp.error && !showSuccess ? <p className="mb-3 text-sm text-destructive">{updateMessage(sp.error)}</p> : null}
+
+      <div className="h-[calc(100vh-180px)] overflow-auto rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Email</TableHead>
+              <TableHead>Username</TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Languages</TableHead>
+              <TableHead>Role</TableHead>
+              {canEdit ? <TableHead>Edit</TableHead> : null}
+              {canEdit ? <TableHead className="text-right">Delete</TableHead> : null}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.map((u) => {
+              return (
                 <TableRow key={u.id}>
                   <TableCell>{u.email}</TableCell>
                   <TableCell className="font-medium">{u.username ?? ""}</TableCell>
                   <TableCell>
-                    {u.firstName || u.lastName
-                      ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim()
-                      : u.name ?? ""}
+                    {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.name ?? ""}
+                  </TableCell>
+                  <TableCell>
+                    {u.languages?.length ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {u.languages.map((lang) => (
+                          <Badge key={`${u.id}_${lang}`} variant="secondary">
+                            {lang}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell className="font-medium">{u.role}</TableCell>
                   {canEdit ? (
                     <TableCell>
                       <form
-                        className="flex items-center gap-2"
-                        action={async (formData) => {
+                        action={async () => {
                           "use server";
-                          try {
-                            await updateUserRole({
-                              userId: u.id,
-                              role: formData.get("role"),
-                            });
-                          } catch (e) {
-                            const code = e instanceof Error ? e.message : "UNKNOWN";
-                            redirect(`/manager/users?error=${encodeURIComponent(code)}`);
-                          }
-
-                          // Note: redirect() throws; keep it outside try/catch so it
-                          // doesn't get incorrectly treated as an error (NEXT_REDIRECT).
-                          redirect("/manager/users?updated=1");
+                          redirect(`/manager/users?edit=${encodeURIComponent(u.id)}`);
                         }}
                       >
-                        <select
-                          name="role"
-                          defaultValue={u.role}
-                          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                        >
-                          <option value="AGENT">AGENT</option>
-                          <option value="MANAGER">MANAGER</option>
-                          <option value="ADMIN">ADMIN</option>
-                        </select>
-                        <Button type="submit" variant="outline">
-                          Update
+                        <Button type="submit" variant="default" size="sm">
+                          Edit
                         </Button>
                       </form>
                     </TableCell>
                   ) : null}
                   {canEdit ? (
-                    <TableCell>
+                    <TableCell className="text-right">
                       <DeleteUserButton userId={u.id} label={u.email} />
                     </TableCell>
                   ) : null}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
 
-      {canEdit ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Add user</CardTitle>
-            <CardDescription>Admins can create new users (same fields as registration).</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {sp.created ? <p className="mb-3 text-sm text-muted-foreground">User created.</p> : null}
-            {sp.createError ? (
-              <p className="mb-3 text-sm text-destructive">{userCreateMessage(sp.createError)}</p>
-            ) : null}
+      {canEdit && editingUser ? (
+        <SidePanel
+          title="Edit user"
+          description={editingUser.email}
+          closeHref="/manager/users"
+        >
+          <form
+            className="grid gap-3"
+            action={async (fd) => {
+              "use server";
+              try {
+                fd.set("returnTo", returnTo);
+                await updateUserDetailsAsAdmin(fd);
+              } catch (e) {
+                if (isNextRedirectError(e)) throw e;
+                const code = e instanceof Error ? e.message : "UNKNOWN";
+                redirect(`${returnTo}&error=${encodeURIComponent(code)}`);
+              }
+            }}
+          >
+            <input type="hidden" name="userId" value={editingUser.id} />
 
-            <form
-              className="grid gap-3"
-              action={async (fd) => {
-                "use server";
-                try {
-                  await createUserAsAdmin({
-                    email: fd.get("email"),
-                    firstName: fd.get("firstName"),
-                    lastName: fd.get("lastName"),
-                    username: fd.get("username"),
-                    password: fd.get("password"),
-                    role: fd.get("role"),
-                  });
-                } catch (e) {
-                  const code = e instanceof Error ? e.message : "UNKNOWN";
-                  redirect(`/manager/users?createError=${encodeURIComponent(code)}`);
-                }
-
-                // Note: redirect() throws; keep it outside try/catch so it
-                // doesn't get incorrectly treated as an error (NEXT_REDIRECT).
-                redirect("/manager/users?created=1");
-              }}
-            >
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="grid gap-1">
-                  <label className="text-sm font-medium" htmlFor="new_email">
-                    Email
-                  </label>
-                  <input
-                    id="new_email"
-                    name="email"
-                    type="email"
-                    required
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <label className="text-sm font-medium" htmlFor="new_username">
-                    Username
-                  </label>
-                  <input
-                    id="new_username"
-                    name="username"
-                    required
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    autoComplete="off"
-                  />
-                </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-1">
+                <label className="text-sm font-medium" htmlFor="edit_email">
+                  Email
+                </label>
+                <input
+                  id="edit_email"
+                  name="email"
+                  type="email"
+                  required
+                  defaultValue={editingUser.email}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  autoComplete="off"
+                />
               </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="grid gap-1">
-                  <label className="text-sm font-medium" htmlFor="new_firstName">
-                    First name
-                  </label>
-                  <input
-                    id="new_firstName"
-                    name="firstName"
-                    required
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <label className="text-sm font-medium" htmlFor="new_lastName">
-                    Last name
-                  </label>
-                  <input
-                    id="new_lastName"
-                    name="lastName"
-                    required
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    autoComplete="off"
-                  />
-                </div>
+              <div className="grid gap-1">
+                <label className="text-sm font-medium" htmlFor="edit_role">
+                  Role
+                </label>
+                <select
+                  id="edit_role"
+                  name="role"
+                  defaultValue={editingUser.role}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="AGENT">AGENT</option>
+                  <option value="MANAGER">MANAGER</option>
+                  <option value="ADMIN">ADMIN</option>
+                </select>
               </div>
+            </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="grid gap-1">
-                  <label className="text-sm font-medium" htmlFor="new_password">
-                    Password
-                  </label>
-                  <input
-                    id="new_password"
-                    name="password"
-                    type="password"
-                    required
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    autoComplete="new-password"
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <label className="text-sm font-medium" htmlFor="new_role">
-                    Role
-                  </label>
-                  <select
-                    id="new_role"
-                    name="role"
-                    defaultValue="AGENT"
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="AGENT">AGENT</option>
-                    <option value="MANAGER">MANAGER</option>
-                    <option value="ADMIN">ADMIN</option>
-                  </select>
-                </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-1">
+                <label className="text-sm font-medium" htmlFor="edit_firstName">
+                  First name
+                </label>
+                <input
+                  id="edit_firstName"
+                  name="firstName"
+                  required
+                  defaultValue={editingUser.firstName ?? ""}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  autoComplete="off"
+                />
               </div>
+              <div className="grid gap-1">
+                <label className="text-sm font-medium" htmlFor="edit_lastName">
+                  Last name
+                </label>
+                <input
+                  id="edit_lastName"
+                  name="lastName"
+                  required
+                  defaultValue={editingUser.lastName ?? ""}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
 
-              <div>
-                <Button type="submit" variant="secondary">
-                  Create user
-                </Button>
+            <div className="grid gap-1">
+              <label className="text-sm font-medium" htmlFor="edit_languages">
+                Languages (comma-separated)
+              </label>
+              <input
+                id="edit_languages"
+                name="languages"
+                defaultValue={(editingUser.languages ?? []).join(", ")}
+                placeholder="English, Arabic"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="flex items-center justify-end">
+              <Button type="submit" variant="secondary">
+                Save details
+              </Button>
+            </div>
+          </form>
+
+          <div className="mt-4 flex items-center justify-end">
+            <EditUserCredentialsButton userId={editingUser.id} username={editingUser.username} returnTo={returnTo} />
+          </div>
+        </SidePanel>
+      ) : null}
+
+      {canEdit && sp.add ? (
+        <SidePanel
+          title="Add user"
+          description="Create a new account. Language is required."
+          closeHref="/manager/users"
+        >
+          <form
+            className="grid gap-3"
+            action={async (fd) => {
+              "use server";
+              try {
+                await createUserAsAdmin({
+                  email: fd.get("email"),
+                  firstName: fd.get("firstName"),
+                  lastName: fd.get("lastName"),
+                  username: fd.get("username"),
+                  password: fd.get("password"),
+                  confirmPassword: fd.get("confirmPassword"),
+                  role: fd.get("role"),
+                  languages: fd.get("languages"),
+                });
+              } catch (e) {
+                const code = e instanceof Error ? e.message : "UNKNOWN";
+                redirect(`/manager/users?add=1&createError=${encodeURIComponent(code)}`);
+              }
+
+              redirect("/manager/users?created=1");
+            }}
+          >
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-1">
+                <label className="text-sm font-medium" htmlFor="new_email">
+                  Email
+                </label>
+                <input
+                  id="new_email"
+                  name="email"
+                  type="email"
+                  required
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  autoComplete="off"
+                />
               </div>
-            </form>
-          </CardContent>
-        </Card>
+              <div className="grid gap-1">
+                <label className="text-sm font-medium" htmlFor="new_username">
+                  Username
+                </label>
+                <input
+                  id="new_username"
+                  name="username"
+                  required
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-1">
+                <label className="text-sm font-medium" htmlFor="new_firstName">
+                  First name
+                </label>
+                <input
+                  id="new_firstName"
+                  name="firstName"
+                  required
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="grid gap-1">
+                <label className="text-sm font-medium" htmlFor="new_lastName">
+                  Last name
+                </label>
+                <input
+                  id="new_lastName"
+                  name="lastName"
+                  required
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-1">
+                <label className="text-sm font-medium" htmlFor="new_password">
+                  Password
+                </label>
+                <input
+                  id="new_password"
+                  name="password"
+                  type="password"
+                  required
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="grid gap-1">
+                <label className="text-sm font-medium" htmlFor="new_confirmPassword">
+                  Confirm password
+                </label>
+                <input
+                  id="new_confirmPassword"
+                  name="confirmPassword"
+                  type="password"
+                  required
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="grid gap-1">
+                <label className="text-sm font-medium" htmlFor="new_role">
+                  Role
+                </label>
+                <select
+                  id="new_role"
+                  name="role"
+                  defaultValue="AGENT"
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="AGENT">AGENT</option>
+                  <option value="MANAGER">MANAGER</option>
+                  <option value="ADMIN">ADMIN</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-1">
+              <label className="text-sm font-medium" htmlFor="new_languages">
+                Languages (comma-separated)
+              </label>
+              <input
+                id="new_languages"
+                name="languages"
+                required
+                placeholder="English, Arabic"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                autoComplete="off"
+              />
+              <div className="text-xs text-muted-foreground">Required. Used for language-aware project assignment.</div>
+            </div>
+
+            <div>
+              <Button type="submit" variant="secondary">
+                Create user
+              </Button>
+            </div>
+          </form>
+        </SidePanel>
       ) : null}
     </main>
   );

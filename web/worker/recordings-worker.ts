@@ -2,7 +2,7 @@ import { Worker } from "bullmq";
 
 import { db } from "@/lib/db";
 import { redisConnection } from "@/lib/redis";
-import { recordingsQueue } from "@/lib/queues";
+import { getRecordingsQueue } from "@/lib/queues";
 
 type JobData = {
   recordingId: string;
@@ -25,7 +25,7 @@ async function sweepUnscoredOnce() {
 
   for (const c of candidates) {
     try {
-      await recordingsQueue.add("processRecording", { recordingId: c.id }, { jobId: c.id });
+      await getRecordingsQueue().add("processRecording", { recordingId: c.id }, { jobId: c.id });
     } catch {
       // Ignore duplicate jobId (already queued / in-flight).
     }

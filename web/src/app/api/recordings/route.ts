@@ -5,7 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isUserAssignedToProject } from "@/lib/projectAccess";
-import { recordingsQueue } from "@/lib/queues";
+import { getRecordingsQueue } from "@/lib/queues";
 
 const createSchema = z.object({
   scriptId: z.string().min(1),
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
     data: { status: "COMPLETED", lockedByUserId: null, lockedAt: null },
   });
 
-  await recordingsQueue.add(
+  await getRecordingsQueue().add(
     "processRecording",
     { recordingId: rec.id },
     { jobId: rec.id },

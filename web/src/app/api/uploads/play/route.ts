@@ -22,7 +22,7 @@ export async function GET(req: Request) {
 
   const rec = await db.recording.findUnique({
     where: { id },
-    include: { script: true },
+    select: { audioUrl: true, userId: true },
   });
 
   if (!rec) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });

@@ -9,6 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 function errorMessage(code: string) {
   if (code === "EMAIL_IN_USE") return "Email is already registered.";
   if (code === "USERNAME_IN_USE") return "Username is already taken.";
+  if (code === "LANGUAGE_REQUIRED") return "Language is required.";
   return "Registration failed.";
 }
 
@@ -46,6 +47,7 @@ export default async function RegisterPage({
                   lastName: fd.get("lastName"),
                   username: fd.get("username"),
                   password: fd.get("password"),
+                  languages: fd.get("languages"),
                 });
                 redirect("/login");
               } catch (e) {
@@ -87,6 +89,14 @@ export default async function RegisterPage({
                 Password
               </label>
               <Input id="password" name="password" type="password" required autoComplete="new-password" />
+            </div>
+
+            <div className="grid gap-2">
+              <label className="text-sm font-medium" htmlFor="languages">
+                Language(s)
+              </label>
+              <Input id="languages" name="languages" required placeholder="English" autoComplete="off" />
+              <div className="text-xs text-muted-foreground">Required. Comma-separated (e.g. English, Arabic).</div>
             </div>
 
             <Button type="submit">Create account</Button>

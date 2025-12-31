@@ -13,12 +13,16 @@ export default async function AgentTasksProjectsPage() {
 
   return (
     <main className="space-y-6">
+      <div className="space-y-2">
+        <h1 className="text-3xl font-bold tracking-tight">Available Projects</h1>
+        <p className="text-muted-foreground">Select a project and start recording tasks one-by-one.</p>
+      </div>
+
       <Card>
         <CardHeader>
-          <CardTitle>Projects</CardTitle>
+          <CardTitle>My Assigned Projects</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">Select a project and start tasks one-by-one.</p>
 
           {projects.length === 0 ? (
             <p className="text-sm">No projects assigned yet. Ask a manager to assign you to a project.</p>

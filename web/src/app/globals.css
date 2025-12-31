@@ -72,4 +72,24 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  dialog::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+  }
+
+  @keyframes va-slide-in-right {
+    from {
+      transform: translateX(24px);
+      opacity: 0.98;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  .va-sidepanel-in {
+    animation: va-slide-in-right 0.1s ease-out;
+  }
 }
