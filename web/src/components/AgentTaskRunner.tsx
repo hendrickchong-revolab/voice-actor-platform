@@ -6,13 +6,29 @@ import { useRouter } from "next/navigation";
 import { RecorderLine } from "@/components/RecorderLine";
 
 type NextTaskResult =
-  | { status: "task"; script: { id: string; text: string; context: string | null } }
+  | {
+      status: "task";
+      script: {
+        id: string;
+        text: string;
+        context: string | null;
+        details?: Record<string, string | number | boolean | null | undefined> | null;
+      };
+    }
   | { status: "done" }
   | { status: "none_available" };
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "task"; script: { id: string; text: string; context: string | null } }
+  | {
+      kind: "task";
+      script: {
+        id: string;
+        text: string;
+        context: string | null;
+        details?: Record<string, string | number | boolean | null | undefined> | null;
+      };
+    }
   | { kind: "done" }
   | { kind: "none_available" }
   | { kind: "error"; message: string };
@@ -118,6 +134,7 @@ export function AgentTaskRunner({
       scriptId={state.script.id}
       text={state.script.text}
       context={state.script.context}
+      details={state.script.details}
       onSubmitted={() => {
         void loadNext();
       }}

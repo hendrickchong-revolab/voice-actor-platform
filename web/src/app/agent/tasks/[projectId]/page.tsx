@@ -23,8 +23,12 @@ export default async function AgentTaskRunnerPage({
       userId: session.user.id,
       role: session.user.role,
     });
-  } catch {
-    redirect("/unauthorized");
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (message === "UNAUTHORIZED_PROJECT") {
+      redirect("/unauthorized");
+    }
+    throw e;
   }
 
   return (

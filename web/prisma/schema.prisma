@@ -136,6 +136,7 @@ model ScriptLine {
   projectId      String
   text           String
   context        String?
+  details        Json?
 
   status         ScriptStatus @default(AVAILABLE)
 

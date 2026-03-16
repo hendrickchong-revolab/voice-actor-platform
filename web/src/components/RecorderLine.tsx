@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Clock3, Mic, Pause, Play, SkipBack, SkipForward, Square } from "lucide-react";
 import WaveSurfer from "wavesurfer.js";
 import TimelinePlugin from "wavesurfer.js/dist/plugins/timeline.esm.js";
 import RecordPlugin from "wavesurfer.js/dist/plugins/record";
@@ -14,7 +15,16 @@ type Props = {
   scriptId: string;
   text: string;
   context?: string | null;
+  details?: Record<string, string | number | boolean | null | undefined> | null;
   onSubmitted?: () => void;
+};
+
+type PromptDetail = {
+  key: string;
+  label: string;
+  value: string;
+  emphasis: "primary" | "secondary";
+  helpText?: string;
 };
 
 async function decodeAudio(blob: Blob) {
@@ -50,7 +60,39 @@ async function sha256Hex(blob: Blob) {
   return hex;
 }
 
-export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
+function formatClock(seconds: number) {
+  const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+  const total = Math.floor(safe);
+  const mm = Math.floor(total / 60)
+    .toString()
+    .padStart(2, "0");
+  const ss = (total % 60).toString().padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+function formatClockWithMs(seconds: number) {
+  const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+  const totalMs = Math.floor(safe * 1000);
+  const mm = Math.floor(totalMs / 60000)
+    .toString()
+    .padStart(2, "0");
+  const ss = Math.floor((totalMs % 60000) / 1000)
+    .toString()
+    .padStart(2, "0");
+  const mmm = (totalMs % 1000).toString().padStart(3, "0");
+  return `${mm}:${ss}.${mmm}`;
+}
+
+function toTitleLabel(key: string) {
+  return key
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (c) => c.toUpperCase());
+}
+
+export function RecorderLine({ scriptId, text, context, details, onSubmitted }: Props) {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "recording" | "processing" | "ready" | "uploading">(
     "idle",
@@ -59,6 +101,9 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
   const [blob, setBlob] = useState<Blob | null>(null);
   const [metrics, setMetrics] = useState<{ peak: number; rms: number; durationSec: number } | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackTimeSec, setPlaybackTimeSec] = useState(0);
+  const [playbackDurationSec, setPlaybackDurationSec] = useState(0);
+  const [recordingElapsedSec, setRecordingElapsedSec] = useState(0);
   const [hidden, setHidden] = useState(false);
   const liveWaveRef = useRef<HTMLDivElement | null>(null);
   const playbackWaveRef = useRef<HTMLDivElement | null>(null);
@@ -70,6 +115,7 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordRtcRef = useRef<{ startRecording: () => void; stopRecording: (cb: () => void) => void; getBlob: () => Blob; destroy?: () => void } | null>(null);
   const playbackUrlRef = useRef<string | null>(null);
+  const recordingStartedAtRef = useRef<number | null>(null);
 
   const canSubmit = useMemo(() => {
     if (!blob || !metrics) return false;
@@ -80,6 +126,42 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
   }, [blob, metrics]);
 
   const showRecordedWaveform = Boolean(blob);
+  const canPlay = Boolean(blob) && status !== "recording" && status !== "processing";
+
+  const scriptDetails = useMemo<PromptDetail[]>(() => {
+    const base: PromptDetail[] = [
+      {
+        key: "script",
+        label: "Script",
+        value: text,
+        emphasis: "primary",
+        helpText: "Read this line exactly as shown.",
+      },
+      {
+        key: "context",
+        label: "Context",
+        value: context?.trim() || "—",
+        emphasis: "secondary",
+        helpText: "Apply this tone or emotion while reading.",
+      },
+    ];
+
+    if (!details) return base;
+
+    const reserved = new Set(["script", "text", "context"]);
+    const extras = Object.entries(details)
+      .filter(([k]) => !reserved.has(k.toLowerCase()))
+      .map(([k, v]) => ({ key: k, value: v }))
+      .filter((item) => item.value != null && String(item.value).trim() !== "")
+      .map<PromptDetail>((item) => ({
+        key: item.key,
+        label: toTitleLabel(item.key),
+        value: String(item.value),
+        emphasis: "secondary",
+      }));
+
+    return [...base, ...extras];
+  }, [context, details, text]);
 
   useEffect(() => {
     if (!playbackWaveRef.current || !timelineRef.current) return;
@@ -107,6 +189,9 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
     ws.on("play", () => setIsPlaying(true));
     ws.on("pause", () => setIsPlaying(false));
     ws.on("finish", () => setIsPlaying(false));
+    ws.on("timeupdate", (time) => setPlaybackTimeSec(time));
+    ws.on("ready", (duration) => setPlaybackDurationSec(duration));
+    ws.on("decode", (duration) => setPlaybackDurationSec(duration));
 
     playbackWsRef.current = ws;
 
@@ -120,6 +205,8 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
     if (!blob) {
       playbackWsRef.current?.empty();
       setIsPlaying(false);
+      setPlaybackTimeSec(0);
+      setPlaybackDurationSec(0);
       return;
     }
 
@@ -150,6 +237,28 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
       recordRtcRef.current?.destroy?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (status !== "recording") {
+      recordingStartedAtRef.current = null;
+      return;
+    }
+
+    if (recordingStartedAtRef.current == null) {
+      recordingStartedAtRef.current = Date.now();
+    }
+
+    const tick = () => {
+      if (recordingStartedAtRef.current == null) return;
+      setRecordingElapsedSec((Date.now() - recordingStartedAtRef.current) / 1000);
+    };
+
+    tick();
+    const interval = window.setInterval(tick, 200);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [status]);
 
   async function startLiveWaveform(stream: MediaStream) {
     if (!liveWaveRef.current) return;
@@ -194,6 +303,10 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
     setError(null);
     setBlob(null);
     setMetrics(null);
+    setIsPlaying(false);
+    setPlaybackTimeSec(0);
+    setPlaybackDurationSec(0);
+    setRecordingElapsedSec(0);
 
     const mediaDevices = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
     if (!mediaDevices?.getUserMedia) {
@@ -248,6 +361,8 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
 
     recordRtcRef.current = recorder;
     recorder.startRecording();
+    recordingStartedAtRef.current = Date.now();
+    setRecordingElapsedSec(0);
     setStatus("recording");
   }
 
@@ -269,6 +384,7 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
 
       const wav = recorder.getBlob();
       setBlob(wav);
+      setPlaybackTimeSec(0);
       const m = await decodeAudio(wav);
       setMetrics(m);
       setStatus("ready");
@@ -283,6 +399,7 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
         mediaStreamRef.current.getTracks().forEach((t) => t.stop());
         mediaStreamRef.current = null;
       }
+      recordingStartedAtRef.current = null;
     }
   }
 
@@ -365,18 +482,47 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
     router.refresh();
   }
 
+  function seekBy(secondsDelta: number) {
+    const ws = playbackWsRef.current;
+    if (!ws) return;
+    const duration = ws.getDuration();
+    if (!duration || duration <= 0) return;
+    const next = Math.min(duration, Math.max(0, ws.getCurrentTime() + secondsDelta));
+    ws.seekTo(next / duration);
+  }
+
   if (hidden) return null;
 
   return (
     <Card>
       <CardHeader className="space-y-2">
         <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-base">Line</CardTitle>
+          <CardTitle className="text-base"></CardTitle>
           <Badge variant={status === "recording" ? "destructive" : "secondary"}>{status}</Badge>
         </div>
-        <div className="space-y-1">
-          <div className="text-sm">{text}</div>
-          {context ? <div className="text-sm text-muted-foreground">{context}</div> : null}
+        <div className="rounded-md border bg-muted/20 p-3">
+          <div className="space-y-2">
+            {scriptDetails.map((entry) => (
+              <div
+                key={entry.key}
+                className={
+                  entry.emphasis === "primary"
+                    ? "rounded-md border border-primary/30 bg-primary/5 p-3"
+                    : "rounded-md border border-muted-foreground/20 bg-background p-3"
+                }
+              >
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {entry.label}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">{entry.helpText}</span>
+                </div>
+                <p className={entry.emphasis === "primary" ? "text-base font-semibold" : "text-sm font-medium"}>
+                  {entry.value}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </CardHeader>
 
@@ -396,6 +542,89 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
           </div>
         </div>
 
+        {status === "recording" ? (
+          <div className="relative flex items-center justify-center rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+            <div className="flex items-center justify-center gap-2">
+              <Button
+                onClick={stop}
+                type="button"
+                variant="destructive"
+                size="sm"
+                aria-label="Stop recording"
+                title="Stop recording"
+                className="h-9 w-9 rounded-full p-0"
+              >
+                <Square className="h-4 w-4" />
+              </Button>
+              <span className="text-sm font-medium text-destructive">Recording</span>
+            </div>
+
+            <div className="absolute right-3 flex items-center gap-1 text-xs tabular-nums text-destructive">
+              <Clock3 className="h-4 w-4" />
+              <span>{formatClockWithMs(recordingElapsedSec)}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="relative flex items-center justify-center rounded-md border bg-muted/20 px-3 py-2">
+            <div className="flex items-center justify-center gap-1">
+              <Button
+                onClick={start}
+                type="button"
+                variant="destructive"
+                size="sm"
+                aria-label="Start recording"
+                title="Start recording"
+                className="h-9 w-9 rounded-full p-0"
+              >
+                <Mic className="h-4 w-4" />
+              </Button>
+
+              <Button
+                onClick={() => seekBy(-5)}
+                type="button"
+                disabled={!canPlay}
+                variant="ghost"
+                size="sm"
+                aria-label="Seek backward 5 seconds"
+                title="Back 5s"
+                className="h-9 w-9 p-0"
+              >
+                <SkipBack className="h-4 w-4" />
+              </Button>
+
+              <Button
+                onClick={() => playbackWsRef.current?.playPause()}
+                type="button"
+                disabled={!canPlay}
+                variant="outline"
+                size="sm"
+                aria-label={isPlaying ? "Pause playback" : "Play recording"}
+                title={isPlaying ? "Pause" : "Play"}
+                className="h-9 w-9 p-0"
+              >
+                {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              </Button>
+
+              <Button
+                onClick={() => seekBy(5)}
+                type="button"
+                disabled={!canPlay}
+                variant="ghost"
+                size="sm"
+                aria-label="Seek forward 5 seconds"
+                title="Forward 5s"
+                className="h-9 w-9 p-0"
+              >
+                <SkipForward className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="absolute right-3 text-xs tabular-nums text-muted-foreground">
+              {formatClock(playbackTimeSec)} / {formatClock(playbackDurationSec || metrics?.durationSec || 0)}
+            </div>
+          </div>
+        )}
+
         {metrics ? (
           <div className="text-sm text-muted-foreground">
             <div>Duration: {metrics.durationSec.toFixed(2)}s</div>
@@ -407,25 +636,6 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
         <div className="flex flex-wrap gap-2">
-          {status !== "recording" ? (
-            <Button onClick={start} type="button">
-              Record
-            </Button>
-          ) : (
-            <Button onClick={stop} type="button" variant="destructive">
-              Stop
-            </Button>
-          )}
-
-          <Button
-            onClick={() => playbackWsRef.current?.playPause()}
-            type="button"
-            disabled={!blob || status === "recording" || status === "processing"}
-            variant="outline"
-          >
-            {isPlaying ? "Pause" : "Play"}
-          </Button>
-
           <Button
             onClick={submit}
             type="button"

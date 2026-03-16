@@ -3,19 +3,51 @@
 import { parse } from "csv-parse/sync";
 import { z } from "zod";
 import { redirect } from "next/navigation";
+import type { Prisma } from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { isUserAssignedToProject } from "@/lib/projectAccess";
 import { requireRole, requireSession } from "@/lib/session";
 
-type ParsedScriptLine = { text: string; context: string | null };
+type PromptScalar = string | number | boolean;
+type ParsedScriptLine = {
+  text: string;
+  context: string | null;
+  details: Record<string, PromptScalar> | null;
+};
 
 function normalizeKey(key: string) {
   return key.trim().toLowerCase();
 }
 
+function toPromptScalar(value: unknown): PromptScalar | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  return null;
+}
+
+function extractDetailsFromRecord(
+  record: Record<string, unknown>,
+  excludedKeys: Set<string>,
+): Record<string, PromptScalar> | null {
+  const detailsEntries = Object.entries(record)
+    .filter(([key]) => !excludedKeys.has(normalizeKey(key)))
+    .map(([key, value]) => ({ key: normalizeKey(key), value: toPromptScalar(value) }))
+    .filter((entry): entry is { key: string; value: PromptScalar } => entry.value !== null);
+
+  if (detailsEntries.length === 0) return null;
+  return Object.fromEntries(detailsEntries.map((entry) => [entry.key, entry.value]));
+}
+
 function toLinesFromObjects(objects: unknown[]): ParsedScriptLine[] {
   const lines: ParsedScriptLine[] = [];
+  const excluded = new Set(["text", "context", "line", "script", "direction"]);
+
   for (const obj of objects) {
     if (!obj || typeof obj !== "object") continue;
     const record = obj as Record<string, unknown>;
@@ -25,6 +57,7 @@ function toLinesFromObjects(objects: unknown[]): ParsedScriptLine[] {
     lines.push({
       text: textVal.trim(),
       context: typeof contextVal === "string" && contextVal.trim().length > 0 ? contextVal.trim() : null,
+      details: extractDetailsFromRecord(record, excluded),
     });
   }
   return lines;
@@ -85,11 +118,13 @@ function parseDelimited(raw: string): ParsedScriptLine[] {
   });
 
   // Enforce `text` column, `context` optional.
+  const excluded = new Set(["text", "context", "line", "script", "direction"]);
   const lines: ParsedScriptLine[] = records
     .map((r) => {
       const text = (r.text ?? "").toString().trim();
       const context = (r.context ?? "").toString().trim();
-      return { text, context: context || null };
+      const details = extractDetailsFromRecord(r, excluded);
+      return { text, context: context || null, details };
     })
     .filter((r) => r.text.length > 0);
 
@@ -118,6 +153,7 @@ export async function importScriptsAnyFormat(input: unknown) {
       projectId,
       text: l.text,
       context: l.context,
+      details: (l.details ?? undefined) as Prisma.InputJsonValue | undefined,
     })),
   });
 
@@ -141,9 +177,11 @@ export async function importScriptsCsv(input: unknown) {
 
   const lines = records
     .map((r) => {
+      const excluded = new Set(["text", "context", "line", "script", "direction"]);
       const text = (r.text ?? r.line ?? r.script ?? "").toString().trim();
       const context = (r.context ?? r.direction ?? "").toString().trim();
-      return { text, context: context || null };
+      const details = extractDetailsFromRecord(r, excluded);
+      return { text, context: context || null, details };
     })
     .filter((r) => r.text.length > 0);
 
@@ -157,6 +195,7 @@ export async function importScriptsCsv(input: unknown) {
       projectId,
       text: l.text,
       context: l.context,
+      details: (l.details ?? undefined) as Prisma.InputJsonValue | undefined,
     })),
   });
 
