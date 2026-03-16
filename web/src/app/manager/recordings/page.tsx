@@ -126,16 +126,17 @@ export default async function ManagerRecordingsLogPage({
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {r.mosScore != null ? (
-                      <div className="space-y-0.5">
-                        <div>{r.mosScore.toFixed(2)}</div>
-                        {r.nisqaNoiPred != null || r.nisqaDisPred != null || r.nisqaColPred != null || r.nisqaLoudPred != null ? (
-                          <div className="text-[11px] text-muted-foreground">
-                            {r.nisqaNoiPred != null ? `NOI ${r.nisqaNoiPred.toFixed(2)} ` : ""}
-                            {r.nisqaDisPred != null ? `DIS ${r.nisqaDisPred.toFixed(2)} ` : ""}
-                            {r.nisqaColPred != null ? `COL ${r.nisqaColPred.toFixed(2)} ` : ""}
-                            {r.nisqaLoudPred != null ? `LOUD ${r.nisqaLoudPred.toFixed(2)}` : ""}
-                          </div>
-                        ) : null}
+                      <div className="space-y-1">
+                        <div>
+                          {r.mosScore >= r.script.project.targetMos ? (
+                            <Badge variant="default">Pass</Badge>
+                          ) : (
+                            <Badge variant="destructive">Failed</Badge>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          MOS {r.mosScore.toFixed(2)} / {r.script.project.targetMos.toFixed(2)}
+                        </div>
                       </div>
                     ) : (
                       "—"

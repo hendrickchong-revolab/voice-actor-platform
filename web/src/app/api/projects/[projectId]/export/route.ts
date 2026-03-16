@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "next-auth";
-import type { Prisma } from "@prisma/client";
 
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -59,32 +58,50 @@ export async function GET(req: Request, ctx: { params: Promise<{ projectId: stri
     const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, title: true } });
     if (!project) return new NextResponse("Project not found", { status: 404 });
 
-  // Exportable recordings are usually manager-approved.
-  // If the auto-scoring worker is enabled, it may also set `autoPassed=true`.
-  let where: Prisma.RecordingWhereInput;
-  if (include === "approved") {
-    where = { script: { projectId }, status: "APPROVED" };
-  } else if (include === "auto") {
-    where = { script: { projectId }, autoPassed: true, status: { not: "REJECTED" } };
-  } else if (include === "all_non_rejected") {
-    where = { script: { projectId }, status: { not: "REJECTED" } };
-  } else {
-    where = {
-      script: { projectId },
-      status: { not: "REJECTED" },
-      OR: [{ status: "APPROVED" }, { autoPassed: true }],
-    };
-  }
-
-  // Fetch recordings with related data
+  // Fetch recordings with related data (include project thresholds for dynamic auto-pass)
   const recs = await db.recording.findMany({
-    where,
+    where: { script: { projectId } },
     orderBy: { createdAt: "asc" },
     include: {
       user: { select: { id: true, email: true } },
-      script: { select: { id: true, text: true, context: true, projectId: true } },
+      script: {
+        select: {
+          id: true,
+          text: true,
+          context: true,
+          projectId: true,
+          project: { select: { targetMos: true, nisqaMinScore: true } },
+        },
+      },
     },
   });
+
+  const computeMean = (r: typeof recs[number]) => {
+    if (typeof r.meanScore === "number") return r.meanScore;
+    const parts = [r.nisqaNoiPred, r.nisqaDisPred, r.nisqaColPred, r.nisqaLoudPred];
+    if (parts.some((v) => v == null)) return null;
+    return (Number(r.nisqaNoiPred) + Number(r.nisqaDisPred) + Number(r.nisqaColPred) + Number(r.nisqaLoudPred)) / 4;
+  };
+
+  const filteredRecs = recs
+    .map((r) => {
+      const mean = computeMean(r);
+      const targetMos = r.script.project.targetMos ?? 3.5;
+      const minScore = r.script.project.nisqaMinScore ?? 3.5;
+      const autoPassed =
+        r.status !== "REJECTED" &&
+        mean != null &&
+        r.mosScore != null &&
+        r.mosScore >= targetMos &&
+        mean >= minScore;
+      return { ...r, __autoPassed: autoPassed, __meanScore: mean, __targetMos: targetMos, __minScore: minScore };
+    })
+    .filter((r) => {
+      if (include === "approved") return r.status === "APPROVED";
+      if (include === "auto") return r.__autoPassed;
+      if (include === "all_non_rejected") return r.status !== "REJECTED";
+      return r.status !== "REJECTED" && (r.status === "APPROVED" || r.__autoPassed);
+    });
 
   // Fetch all ScriptLines (tasks) for this project
   const scriptLines = await db.scriptLine.findMany({
@@ -108,7 +125,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ projectId: stri
   // Build recording rows with audio file export
   const recordingRows: Array<Record<string, unknown>> = [];
 
-  for (const r of recs) {
+  for (const r of filteredRecs) {
     let exportedAudioUri: string | null = null;
     
     try {
@@ -156,7 +173,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ projectId: stri
       userEmail: r.user.email,
       createdAt: r.createdAt.toISOString(),
       durationSec: r.durationSec ?? null,
-      autoPassed: r.autoPassed ?? null,
+      autoPassed: r.__autoPassed,
       autoScoredAt: r.autoScoredAt ? r.autoScoredAt.toISOString() : null,
       audioSha256: r.audioSha256 ?? null,
       sourceS3Uri: r.audioUrl,
@@ -164,6 +181,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ projectId: stri
       werScore: r.werScore ?? null,
       snrScore: r.snrScore ?? null,
       mosScore: r.mosScore ?? null,
+      meanScore: r.__meanScore,
+      targetMos: r.__targetMos,
+      nisqaMinScore: r.__minScore,
       transcript: r.transcript ?? null,
     });
   }
@@ -249,6 +269,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ projectId: stri
     "werScore",
     "snrScore",
     "mosScore",
+    "meanScore",
+    "targetMos",
+    "nisqaMinScore",
     "transcript",
   ];
 

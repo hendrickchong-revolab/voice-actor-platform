@@ -55,7 +55,7 @@ services:
       # NISQA command template (must be provided by you; see README notes in pyworker/nisqa_runner.py)
       # Example: NISQA_PREDICT_CMD: "nisqa_predict --input {wav} --output -"
       NISQA_PREDICT_CMD: ${NISQA_PREDICT_CMD:-}
-      NISQA_MIN_SCORE: ${NISQA_MIN_SCORE:-3.5}
+      NISQA_MIN_SCORE: ${NISQA_MIN_SCORE:-2.5}
     command: bash -lc "apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/* && pip install -U pip && pip install fastapi uvicorn[standard] psycopg[binary] boto3 && python -m pyworker.run"
     depends_on:
       postgres:

@@ -17,6 +17,7 @@ const createProjectSchema = z.object({
     },
     z.string().min(1).optional(),
   ),
+  nisqaMinScore: z.coerce.number().min(0).max(5).optional(),
 });
 
 export async function createProject(input: unknown) {
@@ -29,6 +30,7 @@ export async function createProject(input: unknown) {
         title: data.title,
         description: data.description,
         language: data.language || null,
+        nisqaMinScore: data.nisqaMinScore ?? 3.5,
       },
     });
 
@@ -40,6 +42,88 @@ export async function createProject(input: unknown) {
     }
     throw error;
   }
+}
+
+export async function getProjectsPage({
+  page,
+  pageSize = 10,
+}: {
+  page: number;
+  pageSize?: number;
+}) {
+  await requireRole(["MANAGER", "ADMIN"]);
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safePageSize = Math.max(1, Math.min(50, Math.floor(pageSize)));
+  const skip = (safePage - 1) * safePageSize;
+
+  const [total, items] = await Promise.all([
+    db.project.count({ where: { isActive: true } }),
+    db.project.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: "desc" },
+      take: safePageSize,
+      skip,
+      select: {
+        id: true,
+        title: true,
+        language: true,
+        createdAt: true,
+      },
+    }),
+  ]);
+
+  return { total, items, page: safePage, pageSize: safePageSize };
+}
+
+const updateProjectGeneralSchema = z.object({
+  projectId: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  language: z.preprocess(
+    (v) => {
+      if (typeof v !== "string") return v;
+      const t = v.trim();
+      return t.length === 0 ? null : t;
+    },
+    z.string().min(1).nullable().optional(),
+  ),
+});
+
+export async function updateProjectGeneral(input: unknown) {
+  await requireRole(["MANAGER", "ADMIN"]);
+  const data = updateProjectGeneralSchema.parse(input);
+  const updated = await db.project.update({
+    where: { id: data.projectId },
+    data: {
+      title: data.title,
+      description: data.description,
+      language: data.language ?? null,
+    },
+    select: { id: true },
+  });
+  revalidatePath("/manager/projects");
+  revalidatePath(`/manager/projects/${data.projectId}`);
+  revalidatePath("/agent/tasks");
+  return updated;
+}
+
+const updateProjectAdvancedSchema = z.object({
+  projectId: z.string().min(1),
+  targetMos: z.coerce.number().min(0).max(5),
+  nisqaMinScore: z.coerce.number().min(0).max(5),
+});
+
+export async function updateProjectAdvanced(input: unknown) {
+  await requireRole(["MANAGER", "ADMIN"]);
+  const data = updateProjectAdvancedSchema.parse(input);
+  const updated = await db.project.update({
+    where: { id: data.projectId },
+    data: { targetMos: data.targetMos, nisqaMinScore: data.nisqaMinScore },
+    select: { id: true },
+  });
+  revalidatePath("/manager/projects");
+  revalidatePath(`/manager/projects/${data.projectId}`);
+  return updated;
 }
 
 export async function listActiveProjects() {

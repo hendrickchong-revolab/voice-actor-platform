@@ -23,6 +23,7 @@ class AnalyzeResponse(BaseModel):
     werScore: float | None = None
     transcript: str | None = None
     mosScore: float | None = None
+    meanScore: float | None = None
     nisqaNoiPred: float | None = None
     nisqaDisPred: float | None = None
     nisqaColPred: float | None = None
@@ -125,12 +126,15 @@ def analyze(req: AnalyzeRequest):
         transcript = transcript_override
         wer = None
 
-        # NISQA scoring (MOS + component predictions)
+        # NISQA scoring (MOS + component predictions -> mean)
         nisqa_res = None
         nisqa_passed = None
-        min_metric = get_default_min_threshold()
+        nisqa_mean = None
+        min_metric = rec.get("nisqaMinScore")
+        if min_metric is None:
+            min_metric = get_default_min_threshold()
         try:
-            nisqa_res, nisqa_passed = score_with_nisqa(
+            nisqa_res, nisqa_mean, nisqa_passed = score_with_nisqa(
                 rec["audioUrl"],
                 mos_threshold=rec["targetMos"],
                 min_metric_threshold=min_metric,
@@ -139,6 +143,7 @@ def analyze(req: AnalyzeRequest):
             # Don't crash the pipeline; store a clear note for managers.
             nisqa_res = None
             nisqa_passed = None
+            nisqa_mean = None
             nisqa_err = str(e)
 
         auto_passed = nisqa_passed
@@ -155,8 +160,9 @@ def analyze(req: AnalyzeRequest):
         status = "FLAGGED"
         note_parts: list[str] = []
         if nisqa_res is not None:
+            mean_display = f"{nisqa_mean:.3f}" if nisqa_mean is not None else "n/a"
             note_parts.append(
-                f"NISQA MOS={nisqa_res.mos_pred:.3f} (min {rec['targetMos']:.2f}), NOI={nisqa_res.noi_pred:.3f}, DIS={nisqa_res.dis_pred:.3f}, COL={nisqa_res.col_pred:.3f}, LOUD={nisqa_res.loud_pred:.3f} (min {min_metric:.2f})."
+                f"NISQA MOS={nisqa_res.mos_pred:.3f} (min {rec['targetMos']:.2f}), NOI={nisqa_res.noi_pred:.3f}, DIS={nisqa_res.dis_pred:.3f}, COL={nisqa_res.col_pred:.3f}, LOUD={nisqa_res.loud_pred:.3f} → mean={mean_display} (min {min_metric:.2f})."
             )
             if nisqa_passed is True:
                 note_parts.append("NISQA meets thresholds.")
@@ -186,6 +192,7 @@ def analyze(req: AnalyzeRequest):
             wer=wer,
             snr=None,
             mos=nisqa_res.mos_pred if nisqa_res is not None else None,
+            mean_score=nisqa_mean,
             nisqa_noi=nisqa_res.noi_pred if nisqa_res is not None else None,
             nisqa_dis=nisqa_res.dis_pred if nisqa_res is not None else None,
             nisqa_col=nisqa_res.col_pred if nisqa_res is not None else None,
@@ -201,6 +208,7 @@ def analyze(req: AnalyzeRequest):
             werScore=wer,
             transcript=transcript,
             mosScore=nisqa_res.mos_pred if nisqa_res is not None else None,
+            meanScore=nisqa_mean,
             nisqaNoiPred=nisqa_res.noi_pred if nisqa_res is not None else None,
             nisqaDisPred=nisqa_res.dis_pred if nisqa_res is not None else None,
             nisqaColPred=nisqa_res.col_pred if nisqa_res is not None else None,

@@ -105,6 +105,7 @@ model Project {
   language        String?
 
   targetMos       Float    @default(3.5)
+  nisqaMinScore   Float    @default(3.5)
   maxNoiseFloorDb Float    @default(-40.0)
   maxWer          Float    @default(0.15)
 
@@ -170,6 +171,9 @@ model Recording {
   mosScore    Float?
   werScore    Float?
   transcript  String?
+
+  // Aggregated NISQA mean of NOI/DIS/COL/LOUD
+  meanScore   Float?
 
   // --- NISQA Quality Metrics (1-5) ---
   nisqaNoiPred  Float?

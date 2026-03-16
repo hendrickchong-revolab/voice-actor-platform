@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import WaveSurfer from "wavesurfer.js";
+import TimelinePlugin from "wavesurfer.js/dist/plugins/timeline.esm.js";
+import RecordPlugin from "wavesurfer.js/dist/plugins/record";
+import RecordRTC, { StereoAudioRecorder } from "recordrtc";
 
 type Props = {
   scriptId: string;
@@ -35,63 +39,6 @@ async function decodeAudio(blob: Blob) {
   return { peak, rms, durationSec };
 }
 
-function encodeWavMono16(audioBuffer: AudioBuffer) {
-  const numChannels = audioBuffer.numberOfChannels;
-  const length = audioBuffer.length;
-  const sampleRate = audioBuffer.sampleRate;
-
-  // Mix down to mono.
-  const mono = new Float32Array(length);
-  for (let ch = 0; ch < numChannels; ch++) {
-    const data = audioBuffer.getChannelData(ch);
-    for (let i = 0; i < length; i++) mono[i] += data[i] / numChannels;
-  }
-
-  // 16-bit PCM
-  const bytesPerSample = 2;
-  const blockAlign = 1 * bytesPerSample;
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = mono.length * bytesPerSample;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
-
-  const writeStr = (offset: number, s: string) => {
-    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
-  };
-
-  writeStr(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeStr(8, "WAVE");
-  writeStr(12, "fmt ");
-  view.setUint32(16, 16, true); // PCM header size
-  view.setUint16(20, 1, true); // PCM format
-  view.setUint16(22, 1, true); // channels
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, byteRate, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 16, true); // bits/sample
-  writeStr(36, "data");
-  view.setUint32(40, dataSize, true);
-
-  let off = 44;
-  for (let i = 0; i < mono.length; i++) {
-    const s = Math.max(-1, Math.min(1, mono[i]));
-    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    off += 2;
-  }
-
-  return new Blob([buffer], { type: "audio/wav" });
-}
-
-async function toWav(blob: Blob) {
-  const arrayBuffer = await blob.arrayBuffer();
-  const audioCtx = new AudioContext({ sampleRate: 48000 });
-  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
-  const wav = encodeWavMono16(audioBuffer);
-  audioCtx.close();
-  return wav;
-}
-
 async function sha256Hex(blob: Blob) {
   const buf = await blob.arrayBuffer();
   const hashBuf = await crypto.subtle.digest("SHA-256", buf);
@@ -105,32 +52,24 @@ async function sha256Hex(blob: Blob) {
 
 export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
   const router = useRouter();
-  const [status, setStatus] = useState<"idle" | "recording" | "ready" | "uploading">(
+  const [status, setStatus] = useState<"idle" | "recording" | "processing" | "ready" | "uploading">(
     "idle",
   );
   const [error, setError] = useState<string | null>(null);
   const [blob, setBlob] = useState<Blob | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<{ peak: number; rms: number; durationSec: number } | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [hidden, setHidden] = useState(false);
-  const mediaRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<BlobPart[]>([]);
-
-  const mimeType = useMemo(() => {
-    // Client components still render on the server; guard browser-only APIs.
-    if (typeof window === "undefined") return "";
-
-    const MR = (window as unknown as { MediaRecorder?: typeof MediaRecorder }).MediaRecorder;
-    if (!MR || typeof MR.isTypeSupported !== "function") return "";
-
-    const candidates = [
-      "audio/webm;codecs=opus",
-      "audio/webm",
-      "audio/ogg;codecs=opus",
-      "audio/ogg",
-    ];
-    return candidates.find((c) => MR.isTypeSupported(c)) ?? "";
-  }, []);
+  const liveWaveRef = useRef<HTMLDivElement | null>(null);
+  const playbackWaveRef = useRef<HTMLDivElement | null>(null);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const playbackWsRef = useRef<WaveSurfer | null>(null);
+  const liveWsRef = useRef<WaveSurfer | null>(null);
+  const liveRecordPluginRef = useRef<RecordPlugin | null>(null);
+  const liveMicPreviewRef = useRef<{ onDestroy: () => void; onEnd: () => void } | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordRtcRef = useRef<{ startRecording: () => void; stopRecording: (cb: () => void) => void; getBlob: () => Blob; destroy?: () => void } | null>(null);
+  const playbackUrlRef = useRef<string | null>(null);
 
   const canSubmit = useMemo(() => {
     if (!blob || !metrics) return false;
@@ -140,34 +79,121 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
     return !tooQuiet && !clipped;
   }, [blob, metrics]);
 
+  const showRecordedWaveform = Boolean(blob);
+
+  useEffect(() => {
+    if (!playbackWaveRef.current || !timelineRef.current) return;
+
+    const ws = WaveSurfer.create({
+      container: playbackWaveRef.current,
+      waveColor: "#a5b4fc",
+      progressColor: "#4f46e5",
+      cursorColor: "#1f2937",
+      normalize: true,
+      height: 96,
+      dragToSeek: true,
+      interact: true,
+    });
+
+    ws.registerPlugin(
+      TimelinePlugin.create({
+        container: timelineRef.current,
+        timeInterval: 1,
+        primaryLabelInterval: 5,
+        secondaryLabelInterval: 1,
+      }),
+    );
+
+    ws.on("play", () => setIsPlaying(true));
+    ws.on("pause", () => setIsPlaying(false));
+    ws.on("finish", () => setIsPlaying(false));
+
+    playbackWsRef.current = ws;
+
+    return () => {
+      ws.destroy();
+      playbackWsRef.current = null;
+    };
+  }, []);
+
   useEffect(() => {
     if (!blob) {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
+      playbackWsRef.current?.empty();
+      setIsPlaying(false);
       return;
     }
 
     const url = URL.createObjectURL(blob);
-    setPreviewUrl(url);
+    if (playbackUrlRef.current) URL.revokeObjectURL(playbackUrlRef.current);
+    playbackUrlRef.current = url;
+    playbackWsRef.current?.load(url);
+
     return () => {
       URL.revokeObjectURL(url);
+      if (playbackUrlRef.current === url) {
+        playbackUrlRef.current = null;
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blob]);
+
+  useEffect(() => {
+    return () => {
+      if (playbackUrlRef.current) URL.revokeObjectURL(playbackUrlRef.current);
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      if (liveRecordPluginRef.current?.stopMic) {
+        liveRecordPluginRef.current.stopMic();
+      }
+      liveMicPreviewRef.current?.onDestroy();
+      liveWsRef.current?.destroy();
+      recordRtcRef.current?.destroy?.();
+    };
+  }, []);
+
+  async function startLiveWaveform(stream: MediaStream) {
+    if (!liveWaveRef.current) return;
+
+    liveWsRef.current?.destroy();
+
+    const ws = WaveSurfer.create({
+      container: liveWaveRef.current,
+      waveColor: "#93c5fd",
+      progressColor: "#2563eb",
+      cursorWidth: 0,
+      normalize: true,
+      interact: false,
+      height: 80,
+    });
+
+    const plugin = ws.registerPlugin(
+      RecordPlugin.create({
+        renderRecordedAudio: false,
+        scrollingWaveform: true,
+        continuousWaveform: true,
+      }),
+    );
+
+    liveWsRef.current = ws;
+    liveRecordPluginRef.current = plugin;
+    liveMicPreviewRef.current = plugin.renderMicStream(stream);
+  }
+
+  function stopLiveWaveform() {
+    liveMicPreviewRef.current?.onDestroy();
+    liveMicPreviewRef.current = null;
+    if (liveRecordPluginRef.current?.stopMic) {
+      liveRecordPluginRef.current.stopMic();
+    }
+    liveRecordPluginRef.current = null;
+    liveWsRef.current?.destroy();
+    liveWsRef.current = null;
+  }
 
   async function start() {
     setError(null);
     setBlob(null);
     setMetrics(null);
-
-    const MR = (typeof window !== "undefined"
-      ? (window as unknown as { MediaRecorder?: typeof MediaRecorder }).MediaRecorder
-      : undefined);
-
-    if (!MR) {
-      setError("Recording is not supported in this environment/browser.");
-      return;
-    }
 
     const mediaDevices = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
     if (!mediaDevices?.getUserMedia) {
@@ -198,42 +224,66 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
       }
       return;
     }
-    const rec = new MR(stream, mimeType ? { mimeType } : undefined);
-    mediaRef.current = rec;
-    chunksRef.current = [];
 
-    rec.ondataavailable = (e) => {
-      if (e.data.size > 0) chunksRef.current.push(e.data);
-    };
+    mediaStreamRef.current = stream;
 
-    rec.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop());
-      const raw = new Blob(chunksRef.current, { type: rec.mimeType || mimeType || "audio/webm" });
-      try {
-        const wav = await toWav(raw);
-        setBlob(wav);
-        const m = await decodeAudio(wav);
-        setMetrics(m);
-        setStatus("ready");
-      } catch {
-        // Fallback to raw if conversion/decoding fails in a given browser.
-        setBlob(raw);
-        setStatus("ready");
-        try {
-          const m = await decodeAudio(raw);
-          setMetrics(m);
-        } catch {
-          setError("Could not analyze audio. Try again.");
-        }
-      }
-    };
+    await startLiveWaveform(stream);
 
-    rec.start();
+    const recorder = new (RecordRTC as unknown as {
+      new (streamArg: MediaStream, options: Record<string, unknown>): {
+        startRecording: () => void;
+        stopRecording: (cb: () => void) => void;
+        getBlob: () => Blob;
+        destroy?: () => void;
+      };
+    })(stream, {
+      type: "audio",
+      mimeType: "audio/wav",
+      recorderType: StereoAudioRecorder,
+      sampleRate: 48000,
+      desiredSampRate: 48000,
+      numberOfAudioChannels: 1,
+      disableLogs: true,
+    });
+
+    recordRtcRef.current = recorder;
+    recorder.startRecording();
     setStatus("recording");
   }
 
-  function stop() {
-    mediaRef.current?.stop();
+  async function stop() {
+    if (status !== "recording") return;
+    const recorder = recordRtcRef.current;
+    if (!recorder) {
+      setStatus("idle");
+      setError("Recorder is not ready. Please try again.");
+      return;
+    }
+
+    setStatus("processing");
+
+    try {
+      await new Promise<void>((resolve) => {
+        recorder.stopRecording(() => resolve());
+      });
+
+      const wav = recorder.getBlob();
+      setBlob(wav);
+      const m = await decodeAudio(wav);
+      setMetrics(m);
+      setStatus("ready");
+    } catch {
+      setStatus("idle");
+      setError("Could not finalize recording. Try again.");
+    } finally {
+      recorder.destroy?.();
+      recordRtcRef.current = null;
+      stopLiveWaveform();
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+    }
   }
 
   async function submit() {
@@ -331,9 +381,20 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
       </CardHeader>
 
       <CardContent className="space-y-3">
-        {previewUrl ? (
-          <audio className="w-full" controls src={previewUrl} />
-        ) : null}
+        <div className="space-y-1">
+          <div className="text-sm text-muted-foreground">
+            {showRecordedWaveform ? "Recorded waveform (click to seek)" : "Live waveform"}
+          </div>
+
+          <div className={showRecordedWaveform ? "hidden" : "block"} aria-hidden={showRecordedWaveform}>
+            <div ref={liveWaveRef} className="min-h-24 rounded-md border bg-muted/20" />
+          </div>
+
+          <div className={showRecordedWaveform ? "block" : "hidden"} aria-hidden={!showRecordedWaveform}>
+            <div ref={playbackWaveRef} className="min-h-24 rounded-md border bg-muted/20" />
+            <div ref={timelineRef} className="text-xs text-muted-foreground" />
+          </div>
+        </div>
 
         {metrics ? (
           <div className="text-sm text-muted-foreground">
@@ -355,6 +416,15 @@ export function RecorderLine({ scriptId, text, context, onSubmitted }: Props) {
               Stop
             </Button>
           )}
+
+          <Button
+            onClick={() => playbackWsRef.current?.playPause()}
+            type="button"
+            disabled={!blob || status === "recording" || status === "processing"}
+            variant="outline"
+          >
+            {isPlaying ? "Pause" : "Play"}
+          </Button>
 
           <Button
             onClick={submit}

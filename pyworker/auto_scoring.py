@@ -8,7 +8,7 @@ from .s3_audio import download_to_tempfile
 def score_with_nisqa(audio_s3_uri: str, *, mos_threshold: float, min_metric_threshold: float):
     """Downloads audio from S3, converts to wav if needed, runs NISQA.
 
-    Returns (nisqa_result, passed: bool).
+    Returns (nisqa_result, mean_score: float, passed: bool).
     """
 
     local_path = download_to_tempfile(audio_s3_uri)
@@ -16,15 +16,16 @@ def score_with_nisqa(audio_s3_uri: str, *, mos_threshold: float, min_metric_thre
 
     res = run_nisqa(wav_path)
 
-    passed = (
-        res.mos_pred >= mos_threshold
-        and res.noi_pred >= min_metric_threshold
-        and res.dis_pred >= min_metric_threshold
-        and res.col_pred >= min_metric_threshold
-        and res.loud_pred >= min_metric_threshold
-    )
+    mean_metric = (
+        res.noi_pred
+        + res.dis_pred
+        + res.col_pred
+        + res.loud_pred
+    ) / 4.0
 
-    return res, passed
+    passed = res.mos_pred >= mos_threshold and mean_metric >= min_metric_threshold
+
+    return res, mean_metric, passed
 
 
 def get_default_min_threshold() -> float:

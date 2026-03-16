@@ -101,9 +101,15 @@ export async function GET(req: Request) {
     select: {
       userId: true,
       durationSec: true,
-      autoPassed: true,
       createdAt: true,
+      mosScore: true,
+      meanScore: true,
+      nisqaNoiPred: true,
+      nisqaDisPred: true,
+      nisqaColPred: true,
+      nisqaLoudPred: true,
       user: { select: { email: true } },
+      script: { select: { project: { select: { targetMos: true, nisqaMinScore: true } } } },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -130,7 +136,15 @@ export async function GET(req: Request) {
     const key = `${r.userId}__${bucket}`;
     const existing = map.get(key);
     const duration = r.durationSec ?? 0;
-    const auto = r.autoPassed ? duration : 0;
+    const mean =
+      typeof r.meanScore === "number"
+        ? r.meanScore
+        : r.nisqaNoiPred != null && r.nisqaDisPred != null && r.nisqaColPred != null && r.nisqaLoudPred != null
+          ? (r.nisqaNoiPred + r.nisqaDisPred + r.nisqaColPred + r.nisqaLoudPred) / 4
+          : null;
+    const targetMos = r.script.project.targetMos ?? 3.5;
+    const minScore = r.script.project.nisqaMinScore ?? 3.5;
+    const auto = r.mosScore != null && mean != null && r.mosScore >= targetMos && mean >= minScore ? duration : 0;
 
     if (!existing) {
       map.set(key, {

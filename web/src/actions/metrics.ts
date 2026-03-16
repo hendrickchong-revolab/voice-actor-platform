@@ -1,5 +1,6 @@
 "use server";
 
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireRole, requireSession } from "@/lib/session";
 
@@ -19,6 +20,58 @@ function toDayStartUtc(dateStr: string) {
 
 function addDaysUtc(date: Date, days: number) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function meanExprSql() {
+  // Inline the arithmetic so Postgres treats it as numeric, not a bound text parameter.
+  return Prisma.sql`COALESCE("meanScore", ("nisqaNoiPred" + "nisqaDisPred" + "nisqaColPred" + "nisqaLoudPred") / 4.0)`;
+}
+
+async function sumAutoPassedDurationForUser(userId: string, createdAt?: { gte: Date; lt: Date }) {
+  const meanExpr = meanExprSql();
+  const targetMosExpr = Prisma.sql`COALESCE(p."targetMos", 0)`;
+  const dateClause = createdAt?.gte && createdAt?.lt
+    ? Prisma.sql`AND r."createdAt" >= ${createdAt.gte} AND r."createdAt" < ${createdAt.lt}`
+    : Prisma.sql``;
+
+  const rows = await db.$queryRaw<{ total: number | null }[]>`
+    SELECT COALESCE(SUM(r."durationSec"), 0) AS total
+    FROM "Recording" r
+    JOIN "ScriptLine" s ON s.id = r."scriptId"
+    JOIN "Project" p ON p.id = s."projectId"
+    WHERE r."userId" = ${userId}
+      AND r.status <> 'REJECTED'
+      ${dateClause}
+      AND r."mosScore" IS NOT NULL
+      AND ${meanExpr} IS NOT NULL
+        AND r."mosScore" >= ${targetMosExpr}
+      AND ${meanExpr} >= p."nisqaMinScore"
+  `;
+
+  return rows[0]?.total ?? 0;
+}
+
+async function autoPassedDurationsByUser(createdAt?: { gte: Date; lt: Date }) {
+  const meanExpr = meanExprSql();
+  const targetMosExpr = Prisma.sql`COALESCE(p."targetMos", 0)`;
+  const dateClause = createdAt?.gte && createdAt?.lt
+    ? Prisma.sql`AND r."createdAt" >= ${createdAt.gte} AND r."createdAt" < ${createdAt.lt}`
+    : Prisma.sql``;
+  const rows = await db.$queryRaw<{ userId: string; total: number | null }[]>`
+    SELECT r."userId", COALESCE(SUM(r."durationSec"), 0) AS total
+    FROM "Recording" r
+    JOIN "ScriptLine" s ON s.id = r."scriptId"
+    JOIN "Project" p ON p.id = s."projectId"
+    WHERE r.status <> 'REJECTED'
+      ${dateClause}
+      AND r."mosScore" IS NOT NULL
+      AND ${meanExpr} IS NOT NULL
+      AND r."mosScore" >= ${targetMosExpr}
+      AND ${meanExpr} >= p."nisqaMinScore"
+    GROUP BY r."userId"
+  `;
+
+  return new Map(rows.map((r) => [r.userId, r.total ?? 0]));
 }
 
 function buildCreatedAtRange(input?: { from?: string; to?: string }) {
@@ -43,20 +96,10 @@ export async function getMyAgentMetrics(range?: { from?: string; to?: string }) 
     _sum: { durationSec: true },
   });
 
-  const autoAgg = await db.recording.aggregate({
-    where: {
-      userId: session.user.id,
-      status: { not: "REJECTED" },
-      autoPassed: true,
-      ...(createdAt ? { createdAt } : {}),
-    },
-    _sum: { durationSec: true },
-  });
-
   return {
     totalCount: totalAgg._count._all,
     totalDurationSec: totalAgg._sum.durationSec ?? 0,
-    autoPassedDurationSec: autoAgg._sum?.durationSec ?? 0,
+    autoPassedDurationSec: await sumAutoPassedDurationForUser(session.user.id, createdAt),
   };
 }
 
@@ -77,12 +120,6 @@ export async function getAllAgentMetrics(range?: { from?: string; to?: string })
     _sum: { durationSec: true },
   });
 
-  const autoPassed = await db.recording.groupBy({
-    by: ["userId"],
-    where: { status: { not: "REJECTED" }, autoPassed: true, ...(createdAt ? { createdAt } : {}) },
-    _sum: { durationSec: true },
-  });
-
   const totalsByUser = new Map(
     totals.map((t) => [
       t.userId,
@@ -93,9 +130,7 @@ export async function getAllAgentMetrics(range?: { from?: string; to?: string })
     ]),
   );
 
-  const autoByUser = new Map(
-    autoPassed.map((t) => [t.userId, t._sum?.durationSec ?? 0]),
-  );
+  const autoByUser = await autoPassedDurationsByUser(createdAt);
 
   return agents.map((a) => {
     const t = totalsByUser.get(a.id) ?? { count: 0, duration: 0 };

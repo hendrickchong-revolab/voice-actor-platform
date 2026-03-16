@@ -2,6 +2,7 @@ import os
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import psycopg
+from psycopg import errors
 
 
 def get_database_url() -> str:
@@ -26,45 +27,90 @@ def connect():
 
 def fetch_recording(conn, recording_id: str):
     with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT r.id, r.status, r."audioUrl", r."scriptId", r."userId",
-                   r."autoScoredAt",
-                   r."mosScore", r."snrScore", r."werScore",
-                   r."nisqaNoiPred", r."nisqaDisPred", r."nisqaColPred", r."nisqaLoudPred", r."nisqaModel",
-                   s.text AS script_text, s."projectId" AS project_id,
-                   p."maxWer" AS max_wer, p."maxNoiseFloorDb" AS max_noise_floor_db, p."targetMos" AS target_mos
-            FROM "Recording" r
-            JOIN "ScriptLine" s ON s.id = r."scriptId"
-            JOIN "Project" p ON p.id = s."projectId"
-            WHERE r.id = %s
-            """,
-            (recording_id,),
-        )
+        try:
+            cur.execute(
+                """
+                SELECT r.id, r.status, r."audioUrl", r."scriptId", r."userId",
+                       r."autoScoredAt",
+                       r."mosScore", r."snrScore", r."werScore",
+                       r."nisqaNoiPred", r."nisqaDisPred", r."nisqaColPred", r."nisqaLoudPred", r."nisqaModel",
+                       s.text AS script_text, s."projectId" AS project_id,
+                       p."maxWer" AS max_wer, p."maxNoiseFloorDb" AS max_noise_floor_db, p."targetMos" AS target_mos,
+                       p."nisqaMinScore" AS nisqa_min_score
+                FROM "Recording" r
+                JOIN "ScriptLine" s ON s.id = r."scriptId"
+                JOIN "Project" p ON p.id = s."projectId"
+                WHERE r.id = %s
+                """,
+                (recording_id,),
+            )
+        except errors.UndefinedColumn:
+            # Backward-compat if DB hasn't been migrated yet.
+            cur.execute(
+                """
+                SELECT r.id, r.status, r."audioUrl", r."scriptId", r."userId",
+                       r."autoScoredAt",
+                       r."mosScore", r."snrScore", r."werScore",
+                       r."nisqaNoiPred", r."nisqaDisPred", r."nisqaColPred", r."nisqaLoudPred", r."nisqaModel",
+                       s.text AS script_text, s."projectId" AS project_id,
+                       p."maxWer" AS max_wer, p."maxNoiseFloorDb" AS max_noise_floor_db, p."targetMos" AS target_mos
+                FROM "Recording" r
+                JOIN "ScriptLine" s ON s.id = r."scriptId"
+                JOIN "Project" p ON p.id = s."projectId"
+                WHERE r.id = %s
+                """,
+                (recording_id,),
+            )
         row = cur.fetchone()
         if not row:
             return None
-        (
-            rec_id,
-            status,
-            audio_url,
-            script_id,
-            user_id,
-            auto_scored_at,
-            mos_score,
-            snr_score,
-            wer_score,
-            nisqa_noi,
-            nisqa_dis,
-            nisqa_col,
-            nisqa_loud,
-            nisqa_model,
-            script_text,
-            project_id,
-            max_wer,
-            max_noise_floor_db,
-            target_mos,
-        ) = row
+
+        nisqa_min_score = None
+        if len(row) == 20:
+            (
+                rec_id,
+                status,
+                audio_url,
+                script_id,
+                user_id,
+                auto_scored_at,
+                mos_score,
+                snr_score,
+                wer_score,
+                nisqa_noi,
+                nisqa_dis,
+                nisqa_col,
+                nisqa_loud,
+                nisqa_model,
+                script_text,
+                project_id,
+                max_wer,
+                max_noise_floor_db,
+                target_mos,
+                nisqa_min_score,
+            ) = row
+        else:
+            (
+                rec_id,
+                status,
+                audio_url,
+                script_id,
+                user_id,
+                auto_scored_at,
+                mos_score,
+                snr_score,
+                wer_score,
+                nisqa_noi,
+                nisqa_dis,
+                nisqa_col,
+                nisqa_loud,
+                nisqa_model,
+                script_text,
+                project_id,
+                max_wer,
+                max_noise_floor_db,
+                target_mos,
+            ) = row
         return {
             "id": rec_id,
             "status": status,
@@ -77,6 +123,7 @@ def fetch_recording(conn, recording_id: str):
             "maxWer": float(max_wer) if max_wer is not None else 0.15,
             "maxNoiseFloorDb": float(max_noise_floor_db) if max_noise_floor_db is not None else -40.0,
             "targetMos": float(target_mos) if target_mos is not None else 3.5,
+            "nisqaMinScore": float(nisqa_min_score) if nisqa_min_score is not None else None,
             "mosScore": float(mos_score) if mos_score is not None else None,
             "snrScore": float(snr_score) if snr_score is not None else None,
             "werScore": float(wer_score) if wer_score is not None else None,
@@ -97,6 +144,7 @@ def update_recording(
     wer: float | None,
     snr: float | None,
     mos: float | None,
+    mean_score: float | None = None,
     nisqa_noi: float | None = None,
     nisqa_dis: float | None = None,
     nisqa_col: float | None = None,
@@ -114,6 +162,7 @@ def update_recording(
                 "werScore" = %s,
                 "snrScore" = %s,
                 "mosScore" = %s,
+                "meanScore" = %s,
                 "nisqaNoiPred" = %s,
                 "nisqaDisPred" = %s,
                 "nisqaColPred" = %s,
@@ -131,6 +180,7 @@ def update_recording(
                 wer,
                 snr,
                 mos,
+                mean_score,
                 nisqa_noi,
                 nisqa_dis,
                 nisqa_col,

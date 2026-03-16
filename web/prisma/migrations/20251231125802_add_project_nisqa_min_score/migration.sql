@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Project" ADD COLUMN     "nisqaMinScore" DOUBLE PRECISION NOT NULL DEFAULT 3.5;

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/session";
 import { DeleteUserButton } from "@/components/DeleteUserButton";
 import { EditUserCredentialsButton } from "@/components/EditUserCredentialsButton";
+import { SidePanel } from "@/components/SidePanel";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,44 +26,6 @@ function userCreateMessage(code: string) {
   if (code === "PASSWORD_MISMATCH") return "Passwords do not match.";
   if (code === "LANGUAGE_REQUIRED") return "Language is required.";
   return "Could not create user.";
-}
-
-function SidePanel({
-  title,
-  description,
-  closeHref,
-  children,
-}: {
-  title: string;
-  description?: string;
-  closeHref: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="fixed inset-0 z-50">
-      <Link
-        href={closeHref}
-        aria-label="Close"
-        className="absolute inset-0 bg-background/60 backdrop-blur-sm"
-      />
-      <aside className="va-sidepanel-in absolute right-0 top-0 h-full w-full max-w-xl border-l bg-background">
-        <div className="flex h-full flex-col">
-          <div className="border-b p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold">{title}</h2>
-                {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
-              </div>
-              <Link className="text-sm underline" href={closeHref}>
-                Close
-              </Link>
-            </div>
-          </div>
-          <div className="flex-1 overflow-y-auto p-6">{children}</div>
-        </div>
-      </aside>
-    </div>
-  );
 }
 
 function isNextRedirectError(e: unknown) {

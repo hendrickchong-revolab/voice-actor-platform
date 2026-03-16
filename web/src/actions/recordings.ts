@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { db } from "@/lib/db";
 import { requireRole, requireSession } from "@/lib/session";
+import { reevaluateNisqaThresholds } from "@/lib/qc";
 
 const createRecordingSchema = z.object({
   scriptId: z.string().min(1),
@@ -76,7 +77,7 @@ export async function listRecordingsLog({ take = 200 }: { take?: number } = {}) 
         select: {
           text: true,
           context: true,
-          project: { select: { id: true, title: true } },
+          project: { select: { id: true, title: true, targetMos: true } },
         },
       },
     },
@@ -108,7 +109,7 @@ export async function getRecordingsLogPage({
           select: {
             text: true,
             context: true,
-            project: { select: { id: true, title: true } },
+            project: { select: { id: true, title: true, targetMos: true } },
           },
         },
       },
@@ -168,4 +169,23 @@ export async function rejectRecording(input: unknown) {
   revalidatePath("/manager/recordings");
 
   return updated;
+}
+
+const reevaluateSchema = z.object({
+  minScore: z.coerce.number().min(0).max(5).optional(),
+  projectId: z.string().min(1).optional(),
+  take: z.coerce.number().int().min(1).max(5000).optional(),
+});
+
+export async function reevaluateNisqaAsAdmin(input: unknown) {
+  await requireRole(["ADMIN"]);
+  const parsed = reevaluateSchema.parse(input);
+  const result = await reevaluateNisqaThresholds({
+    minScoreOverride: parsed.minScore,
+    projectId: parsed.projectId,
+    take: parsed.take,
+  });
+  revalidatePath("/manager/review");
+  revalidatePath("/manager/recordings");
+  return result;
 }
