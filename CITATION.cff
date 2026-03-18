@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+title: "VA Contribution Platform"
+message: "If you use this software, please cite it using the metadata below."
+type: software
+authors:
+  - family-names: "Chong"
+    given-names: "Hendrick"
+repository-code: "https://github.com/HendrickChong/voice-actor-platform"
+license: "MIT"
+version: "0.1.0"
+date-released: "2026-03-18"

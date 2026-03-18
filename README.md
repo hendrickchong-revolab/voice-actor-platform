@@ -2,6 +2,11 @@
 
 Next.js + Postgres + MinIO (S3-compatible) + Redis/BullMQ + Python (FastAPI) worker.
 
+## License and citation
+
+- License: MIT (see [LICENSE](LICENSE))
+- Citation metadata: [CITATION.cff](CITATION.cff)
+
 ## Quickstart (local dev)
 
 Prereqs:
