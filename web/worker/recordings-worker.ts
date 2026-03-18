@@ -8,6 +8,11 @@ type JobData = {
   recordingId: string;
 };
 
+const workerConcurrency = Math.max(
+  1,
+  Math.min(32, Number.parseInt(process.env.RECORDINGS_WORKER_CONCURRENCY ?? "2", 10) || 2),
+);
+
 async function sweepUnscoredOnce() {
   const batchSize = Number.parseInt(process.env.WORKER_SWEEP_BATCH ?? "50", 10) || 50;
 
@@ -118,7 +123,7 @@ const worker = new Worker<JobData>(
   },
   {
     connection: redisConnection(),
-    concurrency: 1,
+    concurrency: workerConcurrency,
   },
 );
 
@@ -138,4 +143,4 @@ worker.on("failed", (job, err) => {
   console.error(`failed job ${job?.id}:`, err);
 });
 
-console.log("Recordings worker started.");
+console.log(`Recordings worker started (concurrency=${workerConcurrency}).`);

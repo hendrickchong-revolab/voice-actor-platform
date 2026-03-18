@@ -139,7 +139,7 @@ export default async function ManagerProjectsPage({
             {projects.map((p: ProjectItem) => (
               <TableRow key={p.id}>
                 <TableCell className="font-medium">
-                  <Link className="underline" href={`/manager/projects/${p.id}`}>{p.title}</Link>
+                  <Link className="underline" href={manageTabHref({ edit: p.id, tab: "general", page })}>{p.title}</Link>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{p.language ?? "—"}</TableCell>
                 <TableCell className="text-muted-foreground">
@@ -281,7 +281,7 @@ export default async function ManagerProjectsPage({
                           skipDuplicates: true,
                         }),
                       ]);
-                      revalidatePath(`/manager/projects/${editingProject.id}`);
+                      revalidatePath("/manager/projects");
                       revalidatePath("/agent/tasks");
                       redirect(`${manageTabHref({ edit: editingProject.id, tab: "access", page })}&saved=1`);
                     }}

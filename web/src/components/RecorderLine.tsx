@@ -16,6 +16,8 @@ type Props = {
   text: string;
   context?: string | null;
   details?: Record<string, string | number | boolean | null | undefined> | null;
+  submitMode?: "default" | "rejected-review";
+  previousRecordingId?: string | null;
   onSubmitted?: () => void;
 };
 
@@ -92,7 +94,57 @@ function toTitleLabel(key: string) {
     .replace(/^./, (c) => c.toUpperCase());
 }
 
-export function RecorderLine({ scriptId, text, context, details, onSubmitted }: Props) {
+function isAbortLikeError(err: unknown) {
+  const maybe = err as { name?: string; message?: string } | null;
+  const name = (maybe?.name ?? "").toLowerCase();
+  const message = (maybe?.message ?? "").toLowerCase();
+  return name.includes("abort") || message.includes("aborted");
+}
+
+function safeDestroyWaveSurfer(ws: WaveSurfer | null | undefined) {
+  if (!ws) return;
+  try {
+    ws.destroy();
+  } catch (e) {
+    if (!isAbortLikeError(e)) {
+      // Cleanup should never crash UI; keep non-abort errors visible for debugging.
+      console.warn("WaveSurfer destroy failed", e);
+    }
+  }
+}
+
+function safeLoadWaveSurfer(ws: WaveSurfer | null | undefined, url: string) {
+  if (!ws) return;
+  try {
+    const result = ws.load(url) as unknown;
+    if (
+      result &&
+      typeof result === "object" &&
+      "catch" in result &&
+      typeof (result as { catch?: unknown }).catch === "function"
+    ) {
+      void (result as Promise<unknown>).catch((e) => {
+        if (!isAbortLikeError(e)) {
+          console.warn("WaveSurfer load failed", e);
+        }
+      });
+    }
+  } catch (e) {
+    if (!isAbortLikeError(e)) {
+      console.warn("WaveSurfer load failed", e);
+    }
+  }
+}
+
+export function RecorderLine({
+  scriptId,
+  text,
+  context,
+  details,
+  submitMode = "default",
+  previousRecordingId,
+  onSubmitted,
+}: Props) {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "recording" | "processing" | "ready" | "uploading">(
     "idle",
@@ -104,6 +156,7 @@ export function RecorderLine({ scriptId, text, context, details, onSubmitted }: 
   const [playbackTimeSec, setPlaybackTimeSec] = useState(0);
   const [playbackDurationSec, setPlaybackDurationSec] = useState(0);
   const [recordingElapsedSec, setRecordingElapsedSec] = useState(0);
+  const [initialRecordingVisible, setInitialRecordingVisible] = useState(Boolean(previousRecordingId));
   const [hidden, setHidden] = useState(false);
   const liveWaveRef = useRef<HTMLDivElement | null>(null);
   const playbackWaveRef = useRef<HTMLDivElement | null>(null);
@@ -119,14 +172,13 @@ export function RecorderLine({ scriptId, text, context, details, onSubmitted }: 
 
   const canSubmit = useMemo(() => {
     if (!blob || !metrics) return false;
-    // Very simple quality gates (MVP):
+    // RMS-only quality gate.
     const tooQuiet = metrics.rms < 0.01;
-    const clipped = metrics.peak > 0.98;
-    return !tooQuiet && !clipped;
+    return !tooQuiet;
   }, [blob, metrics]);
 
-  const showRecordedWaveform = Boolean(blob);
-  const canPlay = Boolean(blob) && status !== "recording" && status !== "processing";
+  const showRecordedWaveform = (Boolean(blob) || initialRecordingVisible) && status !== "recording";
+  const canPlay = (Boolean(blob) || initialRecordingVisible) && status !== "recording" && status !== "processing";
 
   const scriptDetails = useMemo<PromptDetail[]>(() => {
     const base: PromptDetail[] = [
@@ -192,28 +244,35 @@ export function RecorderLine({ scriptId, text, context, details, onSubmitted }: 
     ws.on("timeupdate", (time) => setPlaybackTimeSec(time));
     ws.on("ready", (duration) => setPlaybackDurationSec(duration));
     ws.on("decode", (duration) => setPlaybackDurationSec(duration));
+    ws.on("error", (e) => {
+      if (!isAbortLikeError(e)) {
+        console.warn("WaveSurfer runtime error", e);
+      }
+    });
 
     playbackWsRef.current = ws;
 
     return () => {
-      ws.destroy();
+      safeDestroyWaveSurfer(ws);
       playbackWsRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     if (!blob) {
-      playbackWsRef.current?.empty();
-      setIsPlaying(false);
-      setPlaybackTimeSec(0);
-      setPlaybackDurationSec(0);
+      if (!initialRecordingVisible) {
+        playbackWsRef.current?.empty();
+        setIsPlaying(false);
+        setPlaybackTimeSec(0);
+        setPlaybackDurationSec(0);
+      }
       return;
     }
 
     const url = URL.createObjectURL(blob);
     if (playbackUrlRef.current) URL.revokeObjectURL(playbackUrlRef.current);
     playbackUrlRef.current = url;
-    playbackWsRef.current?.load(url);
+    safeLoadWaveSurfer(playbackWsRef.current, url);
 
     return () => {
       URL.revokeObjectURL(url);
@@ -221,7 +280,17 @@ export function RecorderLine({ scriptId, text, context, details, onSubmitted }: 
         playbackUrlRef.current = null;
       }
     };
-  }, [blob]);
+  }, [blob, initialRecordingVisible]);
+
+  useEffect(() => {
+    if (blob) return;
+    if (!previousRecordingId) return;
+    if (!initialRecordingVisible) return;
+
+    const playbackUrl = `/api/uploads/play?recordingId=${encodeURIComponent(previousRecordingId)}`;
+    safeLoadWaveSurfer(playbackWsRef.current, playbackUrl);
+    setPlaybackTimeSec(0);
+  }, [blob, initialRecordingVisible, previousRecordingId]);
 
   useEffect(() => {
     return () => {
@@ -233,7 +302,7 @@ export function RecorderLine({ scriptId, text, context, details, onSubmitted }: 
         liveRecordPluginRef.current.stopMic();
       }
       liveMicPreviewRef.current?.onDestroy();
-      liveWsRef.current?.destroy();
+      safeDestroyWaveSurfer(liveWsRef.current);
       recordRtcRef.current?.destroy?.();
     };
   }, []);
@@ -263,7 +332,7 @@ export function RecorderLine({ scriptId, text, context, details, onSubmitted }: 
   async function startLiveWaveform(stream: MediaStream) {
     if (!liveWaveRef.current) return;
 
-    liveWsRef.current?.destroy();
+    safeDestroyWaveSurfer(liveWsRef.current);
 
     const ws = WaveSurfer.create({
       container: liveWaveRef.current,
@@ -295,12 +364,13 @@ export function RecorderLine({ scriptId, text, context, details, onSubmitted }: 
       liveRecordPluginRef.current.stopMic();
     }
     liveRecordPluginRef.current = null;
-    liveWsRef.current?.destroy();
+    safeDestroyWaveSurfer(liveWsRef.current);
     liveWsRef.current = null;
   }
 
   async function start() {
     setError(null);
+    setInitialRecordingVisible(false);
     setBlob(null);
     setMetrics(null);
     setIsPlaying(false);
@@ -427,6 +497,7 @@ export function RecorderLine({ scriptId, text, context, details, onSubmitted }: 
       fd.set("contentType", contentType);
       fd.set("extension", extension);
       fd.set("sha256", audioSha256);
+      fd.set("submitMode", submitMode);
       fd.set("file", new File([blob], `recording.${extension}`, { type: contentType }));
 
       const uploadRes = await fetch("/api/uploads/put", {
@@ -452,7 +523,9 @@ export function RecorderLine({ scriptId, text, context, details, onSubmitted }: 
       return;
     }
 
-    const createRes = await fetch("/api/recordings", {
+    const createEndpoint = submitMode === "rejected-review" ? "/api/recordings/retry" : "/api/recordings";
+
+    const createRes = await fetch(createEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -497,7 +570,7 @@ export function RecorderLine({ scriptId, text, context, details, onSubmitted }: 
     <Card>
       <CardHeader className="space-y-2">
         <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-base"></CardTitle>
+          <CardTitle className="text-base">Recording Task</CardTitle>
           <Badge variant={status === "recording" ? "destructive" : "secondary"}>{status}</Badge>
         </div>
         <div className="rounded-md border bg-muted/20 p-3">
@@ -648,7 +721,7 @@ export function RecorderLine({ scriptId, text, context, details, onSubmitted }: 
 
         {metrics && !canSubmit ? (
           <p className="text-sm text-amber-600">
-            Submission blocked: audio is too quiet or clipped.
+            Submission blocked: RMS is too low.
           </p>
         ) : null}
       </CardContent>

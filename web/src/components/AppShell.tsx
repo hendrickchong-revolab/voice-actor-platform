@@ -23,8 +23,8 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
             <div className="hidden md:flex items-center gap-1">
               {isAgent ? (
-                <Link 
-                  className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors" 
+                <Link
+                  className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
                   href="/agent"
                 >
                   Agent

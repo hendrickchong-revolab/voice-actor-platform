@@ -5,9 +5,9 @@ import { requireSession } from "@/lib/session";
 import { DeleteUserButton } from "@/components/DeleteUserButton";
 import { EditUserCredentialsButton } from "@/components/EditUserCredentialsButton";
 import { SidePanel } from "@/components/SidePanel";
+import { UserLanguagesCell } from "@/components/UserLanguagesCell";
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 function updateMessage(code: string) {
@@ -106,17 +106,7 @@ export default async function ManagerUsersPage({
                     {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.name ?? ""}
                   </TableCell>
                   <TableCell>
-                    {u.languages?.length ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {u.languages.map((lang) => (
-                          <Badge key={`${u.id}_${lang}`} variant="secondary">
-                            {lang}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">—</span>
-                    )}
+                    <UserLanguagesCell userEmail={u.email} languages={u.languages ?? []} />
                   </TableCell>
                   <TableCell className="font-medium">{u.role}</TableCell>
                   {canEdit ? (

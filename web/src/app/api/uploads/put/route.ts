@@ -15,6 +15,7 @@ const formSchema = z.object({
   contentType: z.string().min(1),
   extension: z.string().min(1),
   sha256: z.string().regex(/^[a-f0-9]{64}$/i),
+  submitMode: z.enum(["default", "rejected-review"]).optional(),
 });
 
 function getString(form: FormData, key: string) {
@@ -34,11 +35,19 @@ export async function POST(req: Request) {
   const contentType = getString(form, "contentType");
   const extension = getString(form, "extension");
   const sha256 = getString(form, "sha256");
+  const submitModeRaw = getString(form, "submitMode");
 
-  const parsed = formSchema.safeParse({ scriptId, contentType, extension, sha256 });
+  const parsed = formSchema.safeParse({
+    scriptId,
+    contentType,
+    extension,
+    sha256,
+    submitMode: submitModeRaw || undefined,
+  });
   if (!parsed.success) {
     return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
   }
+  const submitMode = parsed.data.submitMode ?? "default";
 
   const file = form.get("file");
   if (!(file instanceof File)) {
@@ -50,10 +59,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "SCRIPT_NOT_FOUND" }, { status: 404 });
   }
 
-  if (script.status !== "LOCKED" || script.lockedByUserId !== session.user.id) {
-    return NextResponse.json({ error: "SCRIPT_NOT_LOCKED_BY_USER" }, { status: 403 });
-  }
-
   const allowed = await isUserAssignedToProject({
     userId: session.user.id,
     projectId: script.projectId,
@@ -61,6 +66,25 @@ export async function POST(req: Request) {
   });
   if (!allowed) {
     return NextResponse.json({ error: "PROJECT_NOT_ASSIGNED" }, { status: 403 });
+  }
+
+  if (submitMode === "default") {
+    if (script.status !== "LOCKED" || script.lockedByUserId !== session.user.id) {
+      return NextResponse.json({ error: "SCRIPT_NOT_LOCKED_BY_USER" }, { status: 403 });
+    }
+  } else {
+    const rejectedExists = await db.recording.findFirst({
+      where: {
+        scriptId,
+        userId: session.user.id,
+        status: "REJECTED",
+      },
+      select: { id: true },
+    });
+
+    if (!rejectedExists) {
+      return NextResponse.json({ error: "NO_REJECTED_RECORDING_FOR_SCRIPT" }, { status: 409 });
+    }
   }
 
   const bucket = process.env.S3_BUCKET;

@@ -38,6 +38,112 @@ curl -s http://localhost:8000/health | python -m json.tool
 curl -s http://localhost:8000/nisqa/selftest | python -m json.tool
 ```
 
+## How to use the app (current behavior)
+
+### Login
+
+- Open `/login`
+- Default seeded admin (if using seed defaults):
+  - email: `admin@example.com`
+  - password: `admin123`
+
+### Agent flow
+
+1. Go to `/agent` → **Start Tasks**
+2. Open `/agent/tasks` and pick an assigned project
+3. On `/agent/tasks/[projectId]`:
+   - system locks one task for the current agent
+   - record audio with live waveform
+   - stop and review recorded waveform/timeline
+   - submit recording (creates `Recording` + enqueues scoring job)
+
+Notes:
+
+- only assigned agents can access a project task stream
+- upload + recording creation are server-side guarded by lock + assignment checks
+
+### Agent rejected-task correction flow
+
+1. Go to `/agent` → **Review Rejected Tasks**
+2. Open `/agent/rejected-tasks` and select a project
+3. On `/agent/rejected-tasks/[projectId]`:
+   - previous rejected recording is shown for reference
+   - re-record and submit correction
+   - system loads next rejected task until none remain
+
+### Notifications
+
+- A bell icon is available in the top-right auth area.
+- Notifications are user-scoped.
+- Rejection events (manager review or external feedback adapter) create a notification for the affected user.
+
+### Manager/Admin flow
+
+- `/manager/projects`
+  - create project
+  - open **Manage** modal with tabs:
+    - **General**: title/description/language
+    - **Project Access**: assign/unassign agents
+    - **Import Data**: upload script file
+    - **Advanced**: tune `targetMos` and `nisqaMinScore`
+- `/manager/projects/[projectId]`
+  - view details + script count
+  - assign agents
+  - import scripts
+  - export accepted data/audio bundle
+
+## Task file import schema (important)
+
+The project import UI accepts:
+
+- `.csv`
+- `.tsv`
+- `.json` (array/object with line objects)
+- `.jsonl`
+
+For all supported formats:
+
+- required field: `text`
+- optional field: `context`
+
+### Dynamic extra columns (now supported)
+
+Any additional columns/keys are persisted into `ScriptLine.details` and shown in the agent recorder prompt automatically.
+
+Examples of extra fields:
+
+- `emotion`
+- `speed`
+- `volume`
+- `style`
+
+Behavior:
+
+- `text` renders as primary prompt block
+- every column/key other than `text` (including `context`) renders as a dynamic secondary detail block
+- empty values are ignored
+
+### Example CSV
+
+```csv
+text,context,emotion,speed,volume
+Hello there,Cheerful greeting,happy,medium,normal
+Please read this slowly,Instructional,neutral,slow,low
+```
+
+### Example JSON
+
+```json
+[
+   {
+      "text": "Hello there",
+      "context": "Cheerful greeting",
+      "emotion": "happy",
+      "speed": "medium"
+   }
+]
+```
+
 ## Environment variables
 
 There are **two places** env vars live:
@@ -173,3 +279,39 @@ Notes:
 Defaults are configurable via `web/.env`:
 - `RECORDINGS_LOG_PAGE_SIZE` (default `10`)
 - `RECORDINGS_LOG_MAX_PAGE_SIZE` (default `50`)
+
+## Worker throughput tuning (for concurrency)
+
+The recordings worker supports configurable concurrency:
+- `RECORDINGS_WORKER_CONCURRENCY` (default `2`, clamped to `1..32`)
+
+Related sweeper settings:
+- `WORKER_SWEEP_INTERVAL_SEC` (default `60`)
+- `WORKER_SWEEP_BATCH` (default `50`)
+
+If you target ~20 concurrent users, start with:
+- `RECORDINGS_WORKER_CONCURRENCY=2`
+- increase gradually to `3` or `4` while monitoring queue backlog and pyworker latency.
+
+## External feedback adapter (recording rejection)
+
+You can reject recordings from an external pipeline using:
+- `POST /api/integrations/feedback/reject`
+
+Auth:
+- Header `x-feedback-secret: <FEEDBACK_PIPELINE_SECRET>`
+
+Body:
+
+```json
+{
+   "recordingId": "<recording-id>",
+   "reason": "ASR mismatch with expected script",
+   "source": "external-feedback"
+}
+```
+
+Effect:
+- recording status is set to `REJECTED`
+- a user notification is created
+- task appears in rejected-task review flow

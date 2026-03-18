@@ -54,11 +54,30 @@ model User {
 
   // Domain
   recordings    Recording[]
+  notifications Notification[]
+  manualReviewSessionsCreated ManualReviewSession[] @relation("ManualReviewManager")
+  manualReviewSessionsTarget  ManualReviewSession[] @relation("ManualReviewTarget")
   lockedScripts ScriptLine[] @relation("ScriptLocks")
   projectAssignments ProjectAssignment[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
 }
 
 model Account {
@@ -114,6 +133,7 @@ model Project {
 
   scripts         ScriptLine[]
   assignments     ProjectAssignment[]
+  manualReviewSessions ManualReviewSession[]
   createdAt       DateTime @default(now())
 }
 
@@ -146,6 +166,7 @@ model ScriptLine {
   project        Project      @relation(fields: [projectId], references: [id])
   lockedBy       User?        @relation("ScriptLocks", fields: [lockedByUserId], references: [id], onDelete: SetNull)
   recordings     Recording[]
+  manualReviewItems ManualReviewSessionItem[]
 
   @@index([projectId, status])
   @@index([lockedByUserId, lockedAt])
@@ -192,8 +213,56 @@ model Recording {
 
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   script      ScriptLine      @relation(fields: [scriptId], references: [id])
+  manualReviewItems ManualReviewSessionItem[]
 
   @@index([status])
   @@index([userId, createdAt])
   @@index([scriptId, createdAt])
+}
+
+model ManualReviewSession {
+  id            String   @id
+  managerId     String
+  targetUserId  String
+  projectId     String
+  sampleSize    Int
+  totalItems    Int
+  reviewedItems Int      @default(0)
+  approvedItems Int      @default(0)
+  rejectedItems Int      @default(0)
+  scorePercent  Float?
+  approveRatio  Float?
+  rejectRatio   Float?
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  manager       User     @relation("ManualReviewManager", fields: [managerId], references: [id], onDelete: Cascade)
+  targetUser    User     @relation("ManualReviewTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  items         ManualReviewSessionItem[]
+
+  @@index([managerId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([completedAt])
+}
+
+model ManualReviewSessionItem {
+  id          String   @id
+  sessionId   String
+  recordingId String
+  scriptId    String
+  decision    String?
+  note        String?
+  decidedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  session     ManualReviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  recording   Recording           @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  script      ScriptLine          @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, recordingId])
+  @@index([sessionId, createdAt])
+  @@index([recordingId])
+  @@index([scriptId])
 }

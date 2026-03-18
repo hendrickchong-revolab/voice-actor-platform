@@ -47,6 +47,21 @@ export default function AgentHomePage() {
 
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader>
+            <CardTitle>Rejected Tasks</CardTitle>
+            <CardDescription>Review and re-record tasks rejected by QC.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link
+              href="/agent/rejected-tasks"
+              className={cn(buttonVariants({ variant: "secondary" }), "w-full")}
+            >
+              Review Rejected Tasks
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-md transition-shadow">
+          <CardHeader>
             <CardTitle>Account</CardTitle>
             <CardDescription>Update your username or password.</CardDescription>
           </CardHeader>

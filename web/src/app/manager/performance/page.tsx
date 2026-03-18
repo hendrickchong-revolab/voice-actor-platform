@@ -13,7 +13,7 @@ function isoDayUtc(date: Date) {
 export default async function ManagerPerformancePage({
   searchParams,
 }: {
-  searchParams?: Promise<{ from?: string; to?: string; interval?: string }>;
+  searchParams?: Promise<{ from?: string; to?: string; interval?: string; allTime?: string }>;
 }) {
   const sp = (await searchParams) ?? {};
   const today = new Date();
@@ -23,8 +23,9 @@ export default async function ManagerPerformancePage({
   const from = sp.from ?? defaultFrom;
   const to = sp.to ?? defaultTo;
   const interval = sp.interval === "week" || sp.interval === "month" ? sp.interval : "day";
+  const allTime = sp.allTime === "1";
 
-  const metrics = await getAllAgentMetrics({ from, to });
+  const metrics = allTime ? await getAllAgentMetrics() : await getAllAgentMetrics({ from, to });
 
   return (
     <main className="mx-auto w-full max-w-5xl p-6">
@@ -43,48 +44,86 @@ export default async function ManagerPerformancePage({
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Filters</CardTitle>
-          <CardDescription>Select a date range and export a CSV report.</CardDescription>
+          <CardDescription>Choose a time window, then apply filters or export a report.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="flex flex-col gap-3 md:flex-row md:items-end" action="/manager/performance">
-            <div className="grid gap-1">
-              <label className="text-sm font-medium" htmlFor="from">
-                From
-              </label>
-              <Input id="from" name="from" type="date" defaultValue={from} />
+          <form className="space-y-4" action="/manager/performance">
+            <div className="rounded-md border bg-muted/20 p-4">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date window</div>
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-1">
+                  <label className="text-sm font-medium" htmlFor="allTime">
+                    Range
+                  </label>
+                  <select
+                    id="allTime"
+                    name="allTime"
+                    defaultValue={allTime ? "1" : "0"}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="0">Custom range</option>
+                    <option value="1">All time</option>
+                  </select>
+                </div>
+
+                <div className="grid gap-1">
+                  <label className="text-sm font-medium" htmlFor="from">
+                    From
+                  </label>
+                  <Input id="from" name="from" type="date" defaultValue={from} disabled={allTime} />
+                </div>
+
+                <div className="grid gap-1">
+                  <label className="text-sm font-medium" htmlFor="to">
+                    To
+                  </label>
+                  <Input id="to" name="to" type="date" defaultValue={to} disabled={allTime} />
+                </div>
+
+                <div className="grid gap-1">
+                  <label className="text-sm font-medium" htmlFor="interval">
+                    Interval
+                  </label>
+                  <select
+                    id="interval"
+                    name="interval"
+                    defaultValue={interval}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="day">Day</option>
+                    <option value="week">Week</option>
+                    <option value="month">Month</option>
+                  </select>
+                </div>
+              </div>
+
+              <p className="mt-2 text-xs text-muted-foreground">
+                {allTime
+                  ? "All time selected: date fields are ignored."
+                  : "Custom range selected: results include recordings between From and To dates (inclusive)."}
+              </p>
             </div>
-            <div className="grid gap-1">
-              <label className="text-sm font-medium" htmlFor="to">
-                To
-              </label>
-              <Input id="to" name="to" type="date" defaultValue={to} />
-            </div>
-            <div className="grid gap-1">
-              <label className="text-sm font-medium" htmlFor="interval">
-                Interval
-              </label>
-              <select
-                id="interval"
-                name="interval"
-                defaultValue={interval}
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+
+            <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">
+              <Link className={buttonVariants({ variant: "ghost" })} href="/manager/performance">
+                Reset
+              </Link>
+              <Button type="submit" variant="secondary">
+                Apply filters
+              </Button>
+              <Link
+                className={buttonVariants({ variant: "outline" })}
+                href={
+                  allTime
+                    ? `/api/metrics/report?scope=all&allTime=1&interval=${encodeURIComponent(interval)}`
+                    : `/api/metrics/report?scope=all&from=${encodeURIComponent(from)}&to=${encodeURIComponent(
+                        to,
+                      )}&interval=${encodeURIComponent(interval)}`
+                }
               >
-                <option value="day">Day</option>
-                <option value="week">Week</option>
-                <option value="month">Month</option>
-              </select>
+                Export CSV
+              </Link>
             </div>
-            <Button type="submit" variant="secondary">
-              Apply
-            </Button>
-            <Link
-              className={buttonVariants({ variant: "outline" })}
-              href={`/api/metrics/report?scope=all&from=${encodeURIComponent(from)}&to=${encodeURIComponent(
-                to,
-              )}&interval=${encodeURIComponent(interval)}`}
-            >
-              Download CSV
-            </Link>
           </form>
         </CardContent>
       </Card>

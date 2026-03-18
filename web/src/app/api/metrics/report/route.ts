@@ -61,16 +61,17 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const fromStr = searchParams.get("from");
   const toStr = searchParams.get("to");
+  const allTime = searchParams.get("allTime") === "1";
   const interval = parseInterval(searchParams.get("interval"));
   const scope = parseScope(searchParams.get("scope"));
 
-  const from = parseDateParam(fromStr);
-  const to = parseDateParam(toStr);
-  if (!from || !to) {
+  const from = allTime ? null : parseDateParam(fromStr);
+  const to = allTime ? null : parseDateParam(toStr);
+  if (!allTime && (!from || !to)) {
     return new NextResponse("Missing or invalid from/to (YYYY-MM-DD)", { status: 400 });
   }
 
-  const toExclusive = addDaysUtc(to, 1);
+  const toExclusive = to ? addDaysUtc(to, 1) : null;
 
   const isManagerLike = session.user.role === "MANAGER" || session.user.role === "ADMIN";
   const isAdmin = session.user.role === "ADMIN";
@@ -94,7 +95,7 @@ export async function GET(req: Request) {
   const rows = await db.recording.findMany({
     where: {
       status: { not: "REJECTED" },
-      createdAt: { gte: from, lt: toExclusive },
+      ...(from && toExclusive ? { createdAt: { gte: from, lt: toExclusive } } : {}),
       ...(whereUserId ? { userId: whereUserId } : {}),
       ...(userFilter ?? {}),
     },
@@ -197,7 +198,7 @@ export async function GET(req: Request) {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename=metrics_${scope}_${interval}_${fromStr}_to_${toStr}.csv`,
+      "Content-Disposition": `attachment; filename=${allTime ? `metrics_${scope}_${interval}_all_time.csv` : `metrics_${scope}_${interval}_${fromStr}_to_${toStr}.csv`}`,
     },
   });
 }

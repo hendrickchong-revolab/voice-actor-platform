@@ -102,7 +102,6 @@ export async function updateProjectGeneral(input: unknown) {
     select: { id: true },
   });
   revalidatePath("/manager/projects");
-  revalidatePath(`/manager/projects/${data.projectId}`);
   revalidatePath("/agent/tasks");
   return updated;
 }
@@ -122,7 +121,6 @@ export async function updateProjectAdvanced(input: unknown) {
     select: { id: true },
   });
   revalidatePath("/manager/projects");
-  revalidatePath(`/manager/projects/${data.projectId}`);
   return updated;
 }
 

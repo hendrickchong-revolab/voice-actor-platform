@@ -4,6 +4,8 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
 import { db } from "@/lib/db";
+import { createUserNotification } from "@/lib/notifications";
+import { countPendingRejectedTasksForUser } from "@/lib/rejectedTasks";
 import { requireRole, requireSession } from "@/lib/session";
 import { reevaluateNisqaThresholds } from "@/lib/qc";
 
@@ -155,13 +157,30 @@ export async function rejectRecording(input: unknown) {
     },
   });
 
-  // If rejected, allow the line to be re-recorded later.
+  // Keep script completed; correction is handled via the rejected-task review flow.
   await db.scriptLine.update({
     where: { id: updated.scriptId },
     data: {
-      status: "AVAILABLE",
+      status: "COMPLETED",
       lockedByUserId: null,
       lockedAt: null,
+    },
+  });
+
+  const pendingRejectedCount = await countPendingRejectedTasksForUser({ userId: updated.userId });
+
+  await createUserNotification({
+    userId: updated.userId,
+    type: "recording.rejected",
+    title: "A task has been rejected.",
+    message: `A task has been rejected.\nThere are pending ${pendingRejectedCount} rejected tasks to review.\nClick to goto view rejected tasks`,
+    payload: {
+      recordingId,
+      scriptId: updated.scriptId,
+      source: "manager-review",
+      reason: note ?? null,
+      href: "/agent/rejected-tasks",
+      pendingRejectedCount,
     },
   });
 
