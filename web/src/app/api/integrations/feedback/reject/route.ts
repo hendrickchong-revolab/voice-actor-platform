@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { createUserNotification } from "@/lib/notifications";
 import { countPendingRejectedTasksForUser } from "@/lib/rejectedTasks";
 
 export const runtime = "nodejs";
@@ -25,7 +24,7 @@ export async function POST(req: Request) {
   }
 
   const json = await req.json();
-  const { recordingId, reason, source } = bodySchema.parse(json);
+  const { recordingId, reason, source: _source } = bodySchema.parse(json);
 
   const rec = await db.recording.findUnique({
     where: { id: recordingId },
@@ -44,22 +43,7 @@ export async function POST(req: Request) {
     },
   });
 
-  const pendingRejectedCount = await countPendingRejectedTasksForUser({ userId: rec.userId });
-
-  await createUserNotification({
-    userId: rec.userId,
-    type: "recording.rejected",
-    title: "A task has been rejected.",
-    message: `A task has been rejected.\nThere are pending ${pendingRejectedCount} rejected tasks to review.\nClick to goto view rejected tasks`,
-    payload: {
-      recordingId,
-      scriptId: rec.scriptId,
-      source: source ?? "external-feedback",
-      reason: reason ?? null,
-      href: "/agent/rejected-tasks",
-      pendingRejectedCount,
-    },
-  });
+  await countPendingRejectedTasksForUser({ userId: rec.userId });
 
   return NextResponse.json({ ok: true });
 }

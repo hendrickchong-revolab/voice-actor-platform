@@ -52,16 +52,20 @@ export default async function AccountPage({
             className="grid gap-4"
             action={async (fd) => {
               "use server";
+              let errorCode: string | null = null;
               try {
                 await updateMyProfile({
                   firstName: fd.get("firstName"),
                   lastName: fd.get("lastName"),
                   username: fd.get("username"),
                 });
-                redirect("/account?ok=1");
               } catch (e) {
-                const code = e instanceof Error ? e.message : "UNKNOWN";
-                redirect(`/account?error=${encodeURIComponent(code)}`);
+                errorCode = e instanceof Error ? e.message : "UNKNOWN";
+              }
+              if (errorCode) {
+                redirect(`/account?error=${encodeURIComponent(errorCode)}`);
+              } else {
+                redirect("/account?ok=1");
               }
             }}
           >
@@ -109,15 +113,19 @@ export default async function AccountPage({
             className="grid gap-4"
             action={async (fd) => {
               "use server";
+              let errorCode: string | null = null;
               try {
                 await changeMyPassword({
                   currentPassword: fd.get("currentPassword"),
                   newPassword: fd.get("newPassword"),
                 });
-                redirect("/account?ok=1");
               } catch (e) {
-                const code = e instanceof Error ? e.message : "UNKNOWN";
-                redirect(`/account?error=${encodeURIComponent(code)}`);
+                errorCode = e instanceof Error ? e.message : "UNKNOWN";
+              }
+              if (errorCode) {
+                redirect(`/account?error=${encodeURIComponent(errorCode)}`);
+              } else {
+                redirect("/account?ok=1");
               }
             }}
           >

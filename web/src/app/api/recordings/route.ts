@@ -65,11 +65,19 @@ export async function POST(req: Request) {
     data: { status: "COMPLETED", lockedByUserId: null, lockedAt: null },
   });
 
-  await getRecordingsQueue().add(
-    "processRecording",
-    { recordingId: rec.id },
-    { jobId: rec.id },
-  );
+  // Push to processing queue if Redis is configured.
+  // The external worker also polls the DB directly, so this is optional.
+  if (process.env.REDIS_URL) {
+    try {
+      await getRecordingsQueue().add(
+        "processRecording",
+        { recordingId: rec.id },
+        { jobId: rec.id },
+      );
+    } catch {
+      // Non-fatal: worker will pick up the recording via DB polling.
+    }
+  }
 
   return NextResponse.json({ id: rec.id });
 }

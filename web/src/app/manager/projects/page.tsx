@@ -131,6 +131,7 @@ export default async function ManagerProjectsPage({
             <TableRow>
               <TableHead>Title</TableHead>
               <TableHead>Language</TableHead>
+              <TableHead>Tasks</TableHead>
               <TableHead>Created</TableHead>
               <TableHead className="text-right">Manage</TableHead>
             </TableRow>
@@ -142,6 +143,7 @@ export default async function ManagerProjectsPage({
                   <Link className="underline" href={manageTabHref({ edit: p.id, tab: "general", page })}>{p.title}</Link>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{p.language ?? "—"}</TableCell>
+                <TableCell className="text-muted-foreground">{p.completedScripts}/{p.totalScripts}</TableCell>
                 <TableCell className="text-muted-foreground">
                   {new Date(p.createdAt).toLocaleDateString()}
                 </TableCell>

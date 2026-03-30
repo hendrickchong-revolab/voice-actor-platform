@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:fresh": "npm run db:deploy && npm run db:seed && next dev",
+    "dev": "next dev --webpack",
+    "dev:fresh": "npm run db:deploy && npm run db:seed && next dev --webpack",
     "check": "npm run lint && npm run build",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",

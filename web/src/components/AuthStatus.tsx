@@ -4,7 +4,6 @@ import { signOut } from "next-auth/react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { NotificationBell } from "@/components/NotificationBell";
 
 export function AuthStatus({
   email,
@@ -23,10 +22,6 @@ export function AuthStatus({
       ) : (
         <span className="text-sm text-muted-foreground">Not signed in</span>
       )}
-
-      {email ? (
-        <NotificationBell />
-      ) : null}
 
       {email ? (
         <Button

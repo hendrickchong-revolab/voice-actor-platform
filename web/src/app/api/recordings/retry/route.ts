@@ -75,7 +75,13 @@ export async function POST(req: Request) {
     data: { status: "COMPLETED", lockedByUserId: null, lockedAt: null },
   });
 
-  await getRecordingsQueue().add("processRecording", { recordingId: rec.id }, { jobId: rec.id });
+  if (process.env.REDIS_URL) {
+    try {
+      await getRecordingsQueue().add("processRecording", { recordingId: rec.id }, { jobId: rec.id });
+    } catch {
+      // Non-fatal: worker polls DB directly.
+    }
+  }
 
   return NextResponse.json({ id: rec.id });
 }

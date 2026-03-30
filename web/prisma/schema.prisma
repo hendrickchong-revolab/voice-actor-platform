@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // --- ENUMS ---
@@ -54,7 +55,6 @@ model User {
 
   // Domain
   recordings    Recording[]
-  notifications Notification[]
   manualReviewSessionsCreated ManualReviewSession[] @relation("ManualReviewManager")
   manualReviewSessionsTarget  ManualReviewSession[] @relation("ManualReviewTarget")
   lockedScripts ScriptLine[] @relation("ScriptLocks")
@@ -64,21 +64,6 @@ model User {
   updatedAt     DateTime  @updatedAt
 }
 
-model Notification {
-  id        String   @id @default(cuid())
-  userId    String
-  type      String
-  title     String
-  message   String
-  payload   Json?
-  readAt    DateTime?
-  createdAt DateTime @default(now())
-
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, createdAt])
-  @@index([userId, readAt])
-}
 
 model Account {
   id                 String  @id @default(cuid())

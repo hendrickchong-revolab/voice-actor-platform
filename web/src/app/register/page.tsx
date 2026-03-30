@@ -40,6 +40,7 @@ export default async function RegisterPage({
             className="grid gap-4"
             action={async (fd) => {
               "use server";
+              let errorCode: string | null = null;
               try {
                 await registerUser({
                   email: fd.get("email"),
@@ -49,10 +50,13 @@ export default async function RegisterPage({
                   password: fd.get("password"),
                   languages: fd.get("languages"),
                 });
-                redirect("/login");
               } catch (e) {
-                const code = e instanceof Error ? e.message : "UNKNOWN";
-                redirect(`/register?error=${encodeURIComponent(code)}`);
+                errorCode = e instanceof Error ? e.message : "UNKNOWN";
+              }
+              if (errorCode) {
+                redirect(`/register?error=${encodeURIComponent(errorCode)}`);
+              } else {
+                redirect("/login");
               }
             }}
           >

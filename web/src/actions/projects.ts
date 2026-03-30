@@ -68,11 +68,29 @@ export async function getProjectsPage({
         title: true,
         language: true,
         createdAt: true,
+        _count: {
+          select: {
+            scripts: true,
+          },
+        },
+        scripts: {
+          where: { status: "COMPLETED" },
+          select: { id: true },
+        },
       },
     }),
   ]);
 
-  return { total, items, page: safePage, pageSize: safePageSize };
+  const mappedItems = items.map((p) => ({
+    id: p.id,
+    title: p.title,
+    language: p.language,
+    createdAt: p.createdAt,
+    totalScripts: p._count.scripts,
+    completedScripts: p.scripts.length,
+  }));
+
+  return { total, items: mappedItems, page: safePage, pageSize: safePageSize };
 }
 
 const updateProjectGeneralSchema = z.object({
