@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { getMyAgentMetrics } from "@/actions/metrics";
 import { buttonVariants } from "@/components/ui/button";
+import { SubmitButton } from "@/components/SubmitButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
@@ -101,9 +102,7 @@ export default async function AgentPerformancePage({
               <Link className={buttonVariants({ variant: "ghost" })} href="/agent/performance">
                 Reset
               </Link>
-              <button className={buttonVariants({ variant: "secondary" })} type="submit">
-                Apply filters
-              </button>
+              <SubmitButton variant="secondary">Apply filters</SubmitButton>
               <Link
                 className={buttonVariants({ variant: "outline" })}
                 href={

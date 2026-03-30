@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/SubmitButton";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -83,7 +84,7 @@ export function EditUserCredentialsButton({
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit">Save credentials</Button>
+              <SubmitButton>Save credentials</SubmitButton>
             </DialogFooter>
           </form>
         </DialogContent>

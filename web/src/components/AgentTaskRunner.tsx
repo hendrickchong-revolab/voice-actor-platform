@@ -82,15 +82,6 @@ export function AgentTaskRunner({
     }
   }, [projectId]);
 
-  const abandonTask = useCallback(async () => {
-    await fetch("/api/agent/abandon-task", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId }),
-    });
-    void loadNext();
-  }, [projectId, loadNext]);
-
   // Auto-retry with countdown when no tasks are available (another user may have a lock expiring).
   useEffect(() => {
     if (state.kind !== "none_available") {
@@ -172,29 +163,14 @@ export function AgentTaskRunner({
   }
 
   return (
-    <div className="space-y-4">
-      <RecorderLine
-        scriptId={state.script.id}
-        text={state.script.text}
-        context={state.script.context}
-        details={state.script.details}
-        onSubmitted={() => {
-          void loadNext();
-        }}
-      />
-      <div className="border-t pt-3">
-        <button
-          className="text-xs text-muted-foreground underline"
-          type="button"
-          onClick={() => {
-            if (window.confirm("Release this task? It will become available for other users.")) {
-              void abandonTask();
-            }
-          }}
-        >
-          Release task
-        </button>
-      </div>
-    </div>
+    <RecorderLine
+      scriptId={state.script.id}
+      text={state.script.text}
+      context={state.script.context}
+      details={state.script.details}
+      onSubmitted={() => {
+        void loadNext();
+      }}
+    />
   );
 }
