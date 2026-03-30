@@ -8,6 +8,7 @@ import { SidePanel } from "@/components/SidePanel";
 import { UserLanguagesCell } from "@/components/UserLanguagesCell";
 
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/SubmitButton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 function updateMessage(code: string) {
@@ -117,9 +118,7 @@ export default async function ManagerUsersPage({
                           redirect(`/manager/users?edit=${encodeURIComponent(u.id)}`);
                         }}
                       >
-                        <Button type="submit" variant="default" size="sm">
-                          Edit
-                        </Button>
+                        <SubmitButton variant="default" size="sm">Edit</SubmitButton>
                       </form>
                     </TableCell>
                   ) : null}
@@ -233,9 +232,7 @@ export default async function ManagerUsersPage({
             </div>
 
             <div className="flex items-center justify-end">
-              <Button type="submit" variant="secondary">
-                Save details
-              </Button>
+              <SubmitButton variant="secondary">Save details</SubmitButton>
             </div>
           </form>
 
@@ -389,9 +386,7 @@ export default async function ManagerUsersPage({
             </div>
 
             <div>
-              <Button type="submit" variant="secondary">
-                Create user
-              </Button>
+              <SubmitButton variant="secondary">Create user</SubmitButton>
             </div>
           </form>
         </SidePanel>

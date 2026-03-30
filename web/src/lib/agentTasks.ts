@@ -49,7 +49,7 @@ function toTaskScriptPayload(script: {
   };
 }
 
-async function releaseExpiredLocks({ minutes = 30 }: { minutes?: number } = {}) {
+async function releaseExpiredLocks({ minutes = 10 }: { minutes?: number } = {}) {
   const cutoff = new Date(Date.now() - minutes * 60 * 1000);
   await db.scriptLine.updateMany({
     where: {

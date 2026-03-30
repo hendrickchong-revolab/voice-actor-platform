@@ -11,6 +11,7 @@ import { revalidatePath } from "next/cache";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/SubmitButton";
 import {
   Table,
   TableBody,
@@ -153,7 +154,7 @@ export default async function ManagerProjectsPage({
                       redirect(manageTabHref({ edit: p.id, tab: "general", page }));
                     }}
                   >
-                    <Button type="submit" variant="default" size="sm">Manage</Button>
+                    <SubmitButton variant="default" size="sm">Manage</SubmitButton>
                   </form>
                 </TableCell>
               </TableRow>
@@ -193,7 +194,7 @@ export default async function ManagerProjectsPage({
               <Textarea id="c_desc" name="description" />
             </div>
             <div className="flex items-center justify-end">
-              <Button type="submit" variant="secondary">Create</Button>
+              <SubmitButton variant="secondary">Create</SubmitButton>
             </div>
           </form>
         </Modal>
@@ -258,7 +259,7 @@ export default async function ManagerProjectsPage({
                   </div>
 
                   <div className="flex items-center justify-end">
-                    <Button type="submit" variant="secondary">Save</Button>
+                    <SubmitButton variant="secondary">Save</SubmitButton>
                   </div>
                 </form>
               ) : null}
@@ -298,7 +299,7 @@ export default async function ManagerProjectsPage({
                     )}
 
                     <div className="flex items-center justify-end">
-                      <Button type="submit" variant="secondary">Save Assignments</Button>
+                      <SubmitButton variant="secondary">Save Assignments</SubmitButton>
                     </div>
                   </form>
                 </div>
@@ -337,7 +338,7 @@ export default async function ManagerProjectsPage({
                     required
                   />
                   <div className="flex items-center justify-end">
-                    <Button type="submit" variant="secondary">Import</Button>
+                    <SubmitButton variant="secondary">Import</SubmitButton>
                   </div>
                 </form>
               ) : null}
@@ -384,7 +385,7 @@ export default async function ManagerProjectsPage({
                     <div className="text-xs text-muted-foreground">Threshold for mean NISQA (NOI/DIS/COL/LOUD).</div>
                   </div>
                   <div className="flex items-center justify-end">
-                    <Button type="submit" variant="secondary">Save</Button>
+                    <SubmitButton variant="secondary">Save</SubmitButton>
                   </div>
                 </form>
               ) : null}

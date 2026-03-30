@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { changeMyPassword, updateMyProfile } from "@/actions/users";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { SubmitButton } from "@/components/SubmitButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
@@ -97,7 +98,7 @@ export default async function AccountPage({
             </div>
 
             <div>
-              <Button type="submit">Save profile</Button>
+              <SubmitButton>Save profile</SubmitButton>
             </div>
           </form>
         </CardContent>
@@ -144,9 +145,7 @@ export default async function AccountPage({
             </div>
 
             <div>
-              <Button type="submit" variant="secondary">
-                Change password
-              </Button>
+              <SubmitButton variant="secondary">Change password</SubmitButton>
             </div>
           </form>
         </CardContent>

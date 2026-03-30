@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { RecorderLine } from "@/components/RecorderLine";
@@ -54,6 +54,8 @@ export function AgentRejectedTaskRunner({
 }) {
   const router = useRouter();
   const [state, setState] = useState<LoadState>(() => toLoadState(initial));
+  const [retryCountdown, setRetryCountdown] = useState(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadNext = useCallback(async () => {
     setState({ kind: "loading" });
@@ -87,6 +89,33 @@ export function AgentRejectedTaskRunner({
   }, [projectId]);
 
   useEffect(() => {
+    if (state.kind !== "none_available") {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+      setRetryCountdown(0);
+      return;
+    }
+
+    const RETRY_SECONDS = 30;
+    setRetryCountdown(RETRY_SECONDS);
+    countdownRef.current = setInterval(() => {
+      setRetryCountdown((prev) => {
+        if (prev <= 1) {
+          void loadNext();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, [state.kind, loadNext]);
+
+  useEffect(() => {
     if (state.kind !== "done") return;
     window.alert("All rejected tasks for this project are resolved.");
     router.push("/agent/rejected-tasks");
@@ -100,7 +129,9 @@ export function AgentRejectedTaskRunner({
     return (
       <div className="space-y-2">
         <p className="text-sm">No rejected tasks available right now.</p>
-        <p className="text-sm text-muted-foreground">Try again in a moment.</p>
+        <p className="text-sm text-muted-foreground">
+          Retrying in <span className="tabular-nums font-medium">{retryCountdown}s</span>…
+        </p>
         <button
           className="underline text-sm"
           type="button"
@@ -108,7 +139,7 @@ export function AgentRejectedTaskRunner({
             void loadNext();
           }}
         >
-          Refresh
+          Refresh now
         </button>
       </div>
     );

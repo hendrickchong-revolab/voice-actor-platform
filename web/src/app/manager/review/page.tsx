@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/SubmitButton";
 import { InlineAudioPlayer } from "@/components/InlineAudioPlayer";
 import { Badge } from "@/components/ui/badge";
 
@@ -160,7 +161,7 @@ export default async function ManagerReviewPage({
                   }}
                 >
                   <Input name="note" placeholder="Optional note" autoComplete="off" autoCorrect="off" />
-                  <Button type="submit">Approve</Button>
+                  <SubmitButton>Approve</SubmitButton>
                 </form>
                 <form
                   className="flex items-center gap-2"
@@ -173,9 +174,7 @@ export default async function ManagerReviewPage({
                   }}
                 >
                   <Input name="note" placeholder="Optional note" autoComplete="off" autoCorrect="off" />
-                  <Button type="submit" variant="destructive">
-                    Reject
-                  </Button>
+                  <SubmitButton variant="destructive">Reject</SubmitButton>
                 </form>
               </div>
             </CardContent>
@@ -291,12 +290,8 @@ export default async function ManagerReviewPage({
                       }}
                     >
                       <Input name="note" placeholder="Optional note" autoComplete="off" autoCorrect="off" />
-                      <Button type="submit" name="decision" value="APPROVED">
-                        Approve
-                      </Button>
-                      <Button type="submit" name="decision" value="REJECTED" variant="destructive">
-                        Reject
-                      </Button>
+                      <SubmitButton name="decision" value="APPROVED">Approve</SubmitButton>
+                      <SubmitButton name="decision" value="REJECTED" variant="destructive">Reject</SubmitButton>
                     </form>
                   )}
                 </CardContent>
