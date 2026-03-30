@@ -66,21 +66,20 @@ export default async function ManagerProjectsPage({
     ? await db.project.findUnique({ where: { id: editId } })
     : null;
 
-  const agentsForAccessTab =
+  const [agentsForAccessTab, assignedForAccessTab] =
     editingProject && activeTab === "access"
-      ? await db.user.findMany({
-          where: { role: "AGENT" },
-          select: { id: true, email: true, name: true, languages: true },
-          orderBy: { createdAt: "desc" },
-        })
-      : [];
-  const assignedForAccessTab =
-    editingProject && activeTab === "access"
-      ? await db.projectAssignment.findMany({
-          where: { projectId: editingProject.id },
-          select: { userId: true },
-        })
-      : [];
+      ? await Promise.all([
+          db.user.findMany({
+            where: { role: "AGENT" },
+            select: { id: true, email: true, name: true, languages: true },
+            orderBy: { createdAt: "desc" },
+          }),
+          db.projectAssignment.findMany({
+            where: { projectId: editingProject.id },
+            select: { userId: true },
+          }),
+        ])
+      : [[], []];
   const initialAssignedIdsForAccessTab = Array.from(
     new Set(assignedForAccessTab.map((a) => a.userId)),
   );

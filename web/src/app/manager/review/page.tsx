@@ -50,9 +50,11 @@ export default async function ManagerReviewPage({
   }>;
 }) {
   const sp = (await searchParams) ?? {};
-  const recordings = await listPendingForManager();
-  const reviewableAgents = await listReviewableAgents();
-  const sessions = await listManualReviewSessions(30);
+  const [recordings, reviewableAgents, sessions] = await Promise.all([
+    listPendingForManager(),
+    listReviewableAgents(),
+    listManualReviewSessions(30),
+  ]);
   const activeSession = sp.session ? await getManualReviewSession(sp.session) : null;
   const closeHref = "/manager/review";
 
